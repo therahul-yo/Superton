@@ -179,6 +179,16 @@ def _root(
 
 
 @app.command()
+def welcome() -> None:
+    """Show the SuperTon welcome tour at any time."""
+    cfg = _cfg()
+    mem = Memory(cfg)
+    stats = mem.stats()
+    mem.close()
+    ui.welcome_tour(cfg, stats)
+
+
+@app.command()
 def init(
     skip_model: bool = typer.Option(False, "--no-model", help="skip ollama model build"),
     yes: bool = typer.Option(False, "--yes", "-y", help="accept setup prompts"),
@@ -188,78 +198,132 @@ def init(
     cfg.home.mkdir(parents=True, exist_ok=True)
     cfg.palace_dir.mkdir(parents=True, exist_ok=True)
 
-    ui.section("init", "palace + model setup")
+    ui.section("superton init", "palace + model setup")
 
-    # Touch the memory store so the schema is created.
-    Memory(cfg).close()
-    ui.ok("palace ready", str(cfg.palace_dir))
+    # ---------------------------------------------------------------------
+    # Stage 1 — palace store
+    # ---------------------------------------------------------------------
+    with ui.stage("creating palace"):
+        Memory(cfg).close()
+        ui.stage_ok(f"palace at {cfg.palace_dir}")
 
     if skip_model:
-        ui.step("skipped ollama model build")
+        ui.stage_skip("skipped ollama model build (--no-model)")
+        ui.blank()
+        ui.next_steps_card(cfg)
         return
 
-    if shutil.which("ollama") is None:
-        ui.warn("ollama not found in PATH")
-        ui.hint("install: [link]https://ollama.com/download[/link]")
-        if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"):
-            ui.ok("Hugging Face fallback configured via token")
-        else:
-            ui.hint(
-                "fallback: set [bold]HF_TOKEN[/bold] and "
-                "[bold]SUPERTON_MODEL_BACKEND=huggingface[/bold]"
-            )
-        return
+    # ---------------------------------------------------------------------
+    # Stage 2 — ollama availability
+    # ---------------------------------------------------------------------
+    with ui.stage("checking ollama"):
+        if shutil.which("ollama") is None:
+            ui.stage_warn("ollama not found in PATH")
+            ui.hint("install: [link]https://ollama.com/download[/link]")
+            if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"):
+                ui.stage_ok("Hugging Face fallback configured via HF_TOKEN")
+            else:
+                ui.hint(
+                    "fallback: set [bold]HF_TOKEN[/bold] and "
+                    "[bold]SUPERTON_MODEL_BACKEND=huggingface[/bold]"
+                )
+            ui.blank()
+            ui.next_steps_card(cfg)
+            return
 
-    model = Model(cfg)
-    if not model.ollama_ready():
-        ui.step("starting ollama service")
-        if not model.start_ollama():
-            ui.warn("could not start ollama automatically")
+        model = Model(cfg)
+        if not model.ollama_ready() and not model.start_ollama():
+            ui.stage_warn("could not start ollama automatically")
             ui.hint("run manually: [bold]ollama serve[/bold]")
-            ui.hint(
-                "or use Hugging Face: [bold]SUPERTON_MODEL_BACKEND=huggingface HF_TOKEN=...[/bold]"
-            )
             model.close()
+            ui.blank()
+            ui.next_steps_card(cfg)
             return
+        ui.stage_ok(f"ollama running at {cfg.ollama_url}")
 
-    if not model.has_model(cfg.base_model):
-        if not _confirm_pull(
-            cfg.base_model,
-            "Required to build Miniton, the local answer model.",
-            yes=yes,
-        ):
-            ui.warn("skipped model pull")
-            model.close()
-            return
-        ui.step(f"pulling Miniton base model ({cfg.base_model})")
-        subprocess.run(["ollama", "pull", cfg.base_model], check=False)
-        if not model.has_model(cfg.base_model):
-            ui.err(f"failed to pull base model {cfg.base_model}")
-            model.close()
-            return
-    if not model.has_model(cfg.embed_model):
-        if not _confirm_pull(
-            cfg.embed_model,
-            "Required for local embeddings and better semantic memory.",
-            yes=yes,
-        ):
-            ui.warn("skipped embedding model pull")
-            model.close()
-            return
-        ui.step(f"pulling {cfg.embed_model}")
-        subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
-
-    modelfile = _project_modelfile()
-    if modelfile is not None:
-        rendered = _render_modelfile(modelfile, cfg)
-        ui.step(f"building {cfg.model} from {modelfile.name}")
-        if model.build(rendered):
-            ui.ok(f"Miniton ready (as {cfg.model})")
+    # ---------------------------------------------------------------------
+    # Stage 3 — base model
+    # ---------------------------------------------------------------------
+    with ui.stage(f"pulling base model · {cfg.base_model}"):
+        if model.has_model(cfg.base_model):
+            ui.stage_ok("already present")
         else:
-            ui.err("failed to build Miniton")
-    else:
-        ui.warn("Modelfile not found — using base model directly")
+            if not _confirm_pull(
+                cfg.base_model,
+                "Required to build Miniton, the local answer model.",
+                yes=yes,
+            ):
+                ui.stage_warn("skipped model pull")
+                model.close()
+                ui.blank()
+                ui.next_steps_card(cfg)
+                return
+            subprocess.run(["ollama", "pull", cfg.base_model], check=False)
+            if not model.has_model(cfg.base_model):
+                ui.stage_warn(f"failed to pull {cfg.base_model}")
+                model.close()
+                return
+            ui.stage_ok("downloaded")
+
+    # ---------------------------------------------------------------------
+    # Stage 4 — embedding model
+    # ---------------------------------------------------------------------
+    with ui.stage(f"pulling embedding model · {cfg.embed_model}"):
+        if model.has_model(cfg.embed_model):
+            ui.stage_ok("already present")
+        else:
+            if not _confirm_pull(
+                cfg.embed_model,
+                "Required for local embeddings and better semantic memory.",
+                yes=yes,
+            ):
+                ui.stage_warn("skipped embedding model pull")
+                model.close()
+                ui.blank()
+                ui.next_steps_card(cfg)
+                return
+            subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
+            ui.stage_ok("downloaded")
+
+    # ---------------------------------------------------------------------
+    # Stage 5 — build Miniton
+    # ---------------------------------------------------------------------
+    with ui.stage("building Miniton"):
+        modelfile = _project_modelfile()
+        if modelfile is None:
+            ui.stage_warn("Modelfile not found — using base model directly")
+        else:
+            rendered = _render_modelfile(modelfile, cfg)
+            if model.build(rendered):
+                ui.stage_ok(f"built as {cfg.model}")
+            else:
+                ui.stage_warn("model build failed — base model still usable")
     model.close()
+
+    # ---------------------------------------------------------------------
+    # Stage 6 — offer to import Claude Code sessions
+    # ---------------------------------------------------------------------
+    claude_root = Path.home() / ".claude" / "projects"
+    if claude_root.exists() and any(claude_root.rglob("*.jsonl")):
+        ui.blank()
+        should_import = yes or typer.confirm(
+            f"Found Claude Code sessions at {claude_root} — import them now?",
+            default=False,
+        )
+        if should_import:
+            with ui.stage("importing Claude Code sessions"):
+                from superton.importers.claude_code import ClaudeCodeImporter
+
+                mem = Memory(cfg)
+                sessions, drawers = ClaudeCodeImporter(mem).import_all(None)
+                mem.close()
+                ui.stage_ok(f"{drawers} drawers from {sessions} sessions")
+
+    # ---------------------------------------------------------------------
+    # Final — next steps card
+    # ---------------------------------------------------------------------
+    ui.blank()
+    ui.next_steps_card(cfg)
 
 
 @app.command()
@@ -323,9 +387,10 @@ def ask(
         table = ui.make_table("drawer", "score", "source", "preview")
         for h in hits:
             preview = h.drawer.text.replace("\n", " ")[:80]
+            score_style = ui.score_color(h.score)
             table.add_row(
                 h.drawer.id[:8],
-                f"{h.score:.2f}",
+                f"[{score_style}]{h.score:.2f}[/]",
                 Path(h.drawer.source).name,
                 preview,
             )

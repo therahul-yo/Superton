@@ -26,6 +26,7 @@ from typing import Any
 
 from rich.console import Console
 from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -431,3 +432,134 @@ def citations(hits) -> None:
 def typing_cursor(char: str = "▎") -> str:
     """Inline styled cursor for streaming output."""
     return f"[{_current.primary}]{char}[/]"
+
+
+# --- staged flow, markdown, score coloring, next-steps card -------------------
+
+@contextmanager
+def stage(title: str):
+    """A numbered step shown during multi-stage work like `superton init`.
+
+    Usage:
+        with ui.stage("creating palace"):
+            ...
+            ui.stage_detail("palace at {path}")
+    """
+    _console.print(f"[{_current.primary}]→[/] {title}")
+    try:
+        yield
+    except Exception:
+        _console.print(f"  [{_current.error}]✗ {title} failed[/]")
+        raise
+
+
+def stage_ok(msg: str) -> None:
+    """Indented success line paired with the preceding `stage()`."""
+    _console.print(f"  [{_current.success}]✓[/] {msg}")
+
+
+def stage_warn(msg: str) -> None:
+    _console.print(f"  [{_current.warning}]![/] {msg}")
+
+
+def stage_skip(msg: str) -> None:
+    _console.print(f"  [{_current.muted}]- {msg}[/]")
+
+
+def markdown(text: str) -> None:
+    """Render assistant output as markdown. Code blocks get syntax highlighting,
+    lists get proper bullets, headings are bolded. Safe on non-markdown plain
+    text because rich.markdown degrades gracefully.
+    """
+    if not text:
+        return
+    _console.print(Markdown(text, code_theme="ansi_dark"))
+
+
+def score_color(score: float) -> str:
+    """Map a similarity score to a theme-aware confidence color."""
+    if score >= 0.65:
+        return _current.success
+    if score >= 0.40:
+        return _current.warning
+    return _current.muted
+
+
+def next_steps_card(cfg) -> None:
+    """Polished 'you're ready' panel shown at the end of init and by
+    `superton welcome`."""
+    body = Text()
+    body.append("SuperTon is ready.\n", style=f"bold {_current.primary}")
+    body.append("\n")
+    body.append("Try one of:\n", style=_current.muted)
+    body.append("  superton add ~/notes\n", style="bold")
+    body.append("  superton import claude-code\n", style="bold")
+    body.append('  superton ask "what did I decide about X?"\n', style="bold")
+    body.append("  superton                              ", style="bold")
+    body.append("# interactive shell\n", style=_current.muted)
+    body.append("\n")
+    body.append("Power commands:\n", style=_current.muted)
+    body.append("  superton theme                        ", style="bold")
+    body.append("# change look & feel\n", style=_current.muted)
+    body.append("  superton mcp serve                    ", style="bold")
+    body.append("# expose palace to Claude/Cursor\n", style=_current.muted)
+    body.append("  superton dedup --dry-run              ", style="bold")
+    body.append("# find near-duplicates\n", style=_current.muted)
+    body.append("\n")
+    body.append(f"palace   {cfg.palace_dir}\n", style=_current.muted)
+    body.append(f"model    Miniton · {cfg.model_profile} · {cfg.base_model}", style=_current.muted)
+
+    panel(body, title="ready", width=min(_console.width - 2, 78))
+
+
+def welcome_tour(cfg, stats: dict) -> None:
+    """Friendly 3-line introduction usable as `superton welcome` or on first
+    run when the palace is empty."""
+    header(cfg, stats)
+    _console.print(
+        f"[{_current.muted}]SuperTon is a local-first personal second brain.[/] "
+        f"Feed it files and conversations; ask it questions grounded in what it "
+        f"has seen."
+    )
+    _console.print(
+        f"[{_current.muted}]Your palace lives on-disk at[/] "
+        f"[bold]{cfg.palace_dir}[/]"
+        f"[{_current.muted}] — nothing leaves your machine by default.[/]"
+    )
+    _console.print()
+    next_steps_card(cfg)
+
+
+def stream_answer(token_iter, label: str = "Miniton") -> str:
+    """Stream tokens live under a header. Returns the full answer string.
+
+    Uses rich.Live so tokens appear as they arrive. After the stream ends,
+    the final answer is re-rendered as markdown for a tidy output.
+
+    Exceptions from the token iterator propagate to the caller so that
+    model errors (e.g. ModelError) can be handled upstream.
+    """
+    _console.print()
+    _console.print(f"[bold {_current.primary}]{label}[/]")
+    buf: list[str] = []
+    if _console.is_terminal:
+        with Live(
+            Text(""),
+            console=_console,
+            refresh_per_second=30,
+            transient=True,
+        ) as live:
+            for tok in token_iter:
+                buf.append(tok)
+                running = "".join(buf)
+                t = Text(running)
+                # Show a soft cursor at the tail while streaming.
+                t.append("▎", style=_current.primary)
+                live.update(t)
+    else:
+        for tok in token_iter:
+            buf.append(tok)
+    answer = "".join(buf).strip()
+    if answer:
+        markdown(answer)
+    return answer

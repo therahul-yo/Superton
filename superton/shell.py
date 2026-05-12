@@ -38,6 +38,7 @@ def _prompt() -> str:
         from prompt_toolkit import prompt
         from prompt_toolkit.completion import Completer, Completion
         from prompt_toolkit.formatted_text import HTML
+        from prompt_toolkit.history import FileHistory
 
         class SlashCompleter(Completer):
             def get_completions(self, document, complete_event):
@@ -67,6 +68,12 @@ def _prompt() -> str:
                             display_meta=help_text,
                         )
 
+        # Persistent command history across shell sessions.
+        cfg = Config.load()
+        history_dir = cfg.home / "history"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        history = FileHistory(str(history_dir / "shell"))
+
         glyph = ui.theme().prompt_glyph
         return prompt(
             f"{glyph} ",
@@ -75,6 +82,7 @@ def _prompt() -> str:
             ),
             completer=SlashCompleter(),
             complete_while_typing=True,
+            history=history,
         )
     except (ImportError, ValueError):
         return input(f"{ui.theme().prompt_glyph} ")
@@ -381,12 +389,12 @@ def _answer(
         parts.append("Answer naturally and concisely.")
         prompt = "\n\n".join(parts)
     try:
-        def generate_answer() -> str:
+        def generate_answer():
             if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
                 model.start_ollama(timeout=5.0)
-            return "".join(model.generate(prompt, system=system)).strip()
+            yield from model.generate(prompt, system=system)
 
-        answer = _run_with_spinner("Miniton thinking", generate_answer)
+        answer = ui.stream_answer(generate_answer())
     except ModelError:
         if hits:
             answer = (
@@ -395,9 +403,15 @@ def _answer(
             )
         else:
             answer = "Miniton is not available. Run `superton init` to start/build the local model."
+        _print_assistant(answer, hits=hits)
+        return answer
     if not answer:
         answer = "I found related memory, but Miniton returned an empty answer."
-    _print_assistant(answer, hits=hits)
+        _print_assistant(answer, hits=hits)
+        return answer
+    if hits:
+        ui.citations(hits[:3])
+    ui.blank()
     return answer
 
 
