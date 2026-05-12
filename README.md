@@ -13,7 +13,9 @@ answers your questions grounded in what you've fed it.
 - 🧠 **Tiny local model** — Miniton, customizable via `Modelfile`
 - 🔒 **100% local** — no API keys, no cloud, no telemetry
 - 📚 **Verbatim storage** — original text preserved; nothing summarized away
-- 🔗 **Multi-source** — import from Claude Code, ChatGPT, Cursor and more
+- 🔗 **Multi-source** — import from Claude Code, ChatGPT, Cursor, Amp
+- 🎨 **Four themes** — nebula, mono, solar, frost — production-feel CLI
+- 🔌 **MCP-ready** — one command exposes your palace to Claude Code, Cursor, and Gemini CLI
 - 🪶 **Lightweight** — runs comfortably on a laptop
 
 ## Install
@@ -45,9 +47,11 @@ superton init
 The PyPI command works after the package is published. Until then, use the
 GitHub install command.
 
-`superton init` will create the palace, start Ollama when possible, ask before
-downloading missing model weights, and build your custom `Miniton` from the
-`Modelfile`. Use `superton init --yes` for non-interactive setup. The palace lives at
+`superton init` runs as a staged flow: it creates the palace, starts Ollama
+when possible, asks before downloading missing model weights, builds your
+custom `Miniton` from the `Modelfile`, and — if it finds Claude Code sessions
+at `~/.claude/projects` — offers to import them right away. Use
+`superton init --yes` for non-interactive setup. The palace lives at
 `~/Library/Application Support/superton/palace`.
 
 Ollama is the default local backend. If a user does not have Ollama, they can use
@@ -70,68 +74,139 @@ superton import chatgpt ~/Downloads/chatgpt-export
 superton import cursor
 superton import amp
 
-# ask it
+# ask it — Miniton streams tokens live and cites the drawers it used
 superton ask "what did i decide about graphql last spring?"
 superton ask "open issues in the auth refactor" --why
 
 # explore
 superton list
 superton search "how did we handle request throttling?"
+superton sources
 superton stats
 superton doctor
 superton reindex
-superton sources
+
+# switch model / theme / palette
 superton model better
+superton theme solar
+superton welcome                 # anytime tour of what's installed
+
+# power tools
+superton mcp serve               # expose the palace to Claude / Cursor / Gemini
+superton dedup --dry-run         # find near-duplicate drawers
+superton close                   # stop local model runners
+
+# or launch the interactive shell — type / to see all slash commands
 superton
-superton close
 ```
 
-Inside the interactive shell, paste a file path directly to ingest it:
+Inside the interactive shell, paste a file path directly to ingest it. Miniton
+streams its reply with an inline cursor, renders the result as markdown, and
+appends a `sources` footer listing every drawer it used:
 
 ```text
 › /Users/you/Downloads/resume.pdf
 ✓ ingested 4 drawers from 1 file(s)
 › gimme my projects from the resume
+
+Miniton
+- Built SmithWorks — a role-based freelance marketplace using React,
+  Node.js, Socket.IO, JWT, and AWS EC2. [3beb9480]
+- Built TopX AI Resume Analyzer — Flask + scikit-learn NLP pipeline
+  with real-time progress via Socket.IO. [67b61316]
+- ...
+
+sources
+  1. 3beb9480 Resume.pdf
+  2. 67b61316 Resume.pdf
 ```
+
+Inside the shell, `/clear` resets the conversation, `/theme <name>` swaps the
+palette, and `/model <profile>` switches Miniton's base model with a brief
+confirmation flash.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `superton init` | One-time setup: palace + model |
+| `superton init` | One-time staged setup: palace + model + optional Claude Code import |
+| `superton welcome` | Show the header + palace intro + next-steps card any time |
 | `superton add <path>` | Ingest a file or directory |
-| `superton ask "..."` | Query Miniton with palace context |
+| `superton ask "..."` | Query Miniton with palace context (streaming + citations) |
 | `superton list` | Show recent drawers |
-| `superton search "..."` | Semantic search across drawers with lexical fallback |
+| `superton search "..."` | Hybrid search via MemPalace with SQLite fallback |
 | `superton forget <id>` | Remove a drawer |
 | `superton forget-source <path-or-name>` | Remove all drawers from one source |
 | `superton refresh <path>` | Reingest a source and remove stale chunks |
 | `superton sources` | List indexed source files |
 | `superton stats` | Palace statistics |
-| `superton doctor` | Check local runtime, memory, and model setup |
+| `superton doctor` | Check local runtime, memory, theme, and model setup |
 | `superton reindex` | Rebuild semantic index from stored drawers |
 | `superton model [fast\|better\|strong]` | Show or switch Miniton model profile |
+| `superton theme [nebula\|mono\|solar\|frost]` | Show or switch the CLI theme |
+| `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
+| `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
 | `superton close` | Stop running SuperTon model runners |
 | `superton import claude-code` | Import Claude Code session history |
 | `superton import chatgpt <export>` | Import ChatGPT `conversations.json` exports |
 | `superton import cursor` | Import readable Cursor thread/log files |
 | `superton import amp` | Import readable Amp thread/log files |
-| `superton` | Launch the interactive CLI shell |
 | `superton tune` | Edit the Modelfile and rebuild Miniton |
+| `superton` | Launch the interactive CLI shell |
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
-│   superton CLI (typer + rich)               │
+│   superton CLI (typer + rich + themes)      │
 ├─────────────────────────────────────────────┤
-│   Miniton (Ollama + Modelfile)                │
+│   Miniton (Ollama + Modelfile)              │
 ├─────────────────────────────────────────────┤
-│   memory: SQLite + MemPalace semantic index │
+│   memory: SQLite + MemPalace semantic       │
+│           + source-filename hoist re-rank   │
 ├─────────────────────────────────────────────┤
 │   ingest: parsers + chunkers + importers    │
+├─────────────────────────────────────────────┤
+│   mcp: MemPalace MCP server (29 tools)      │
 └─────────────────────────────────────────────┘
 ```
+
+## Themes
+
+SuperTon ships with four hand-tuned CLI themes:
+
+| Theme | Vibe |
+|---|---|
+| `nebula` | amber + violet accents · default, ties to the black-hole identity |
+| `mono` | monochrome · bold white/grey only, Claude-code-style minimalism |
+| `solar` | warm amber/orange · sunrise palette |
+| `frost` | cool cyan/blue · arctic palette |
+
+Switch any time:
+
+```bash
+superton theme                 # show all with color swatches
+superton theme frost           # switch; a 200 ms flash confirms the change
+export SUPERTON_THEME=mono     # env override (useful in CI / screenshots)
+```
+
+All semantic output (paths, drawer ids, commands, key bindings) is styled
+consistently per theme so switching looks intentional, not skinned.
+
+## MCP: plug SuperTon into your other AI tools
+
+A single command exposes your SuperTon palace as a stdio MCP server powered
+by MemPalace:
+
+```bash
+superton mcp serve
+```
+
+Claude Code, Cursor, Gemini CLI, and any other MCP-compatible client can
+connect to it and get 29 tools for reading and writing drawers, navigating
+the palace, and querying the knowledge graph — all backed by your local
+SuperTon store. Your second brain becomes the memory layer for every AI
+tool on your machine.
 
 ## Why?
 
@@ -183,11 +258,16 @@ superton doctor
 
 ## Roadmap
 
-- **Phase 0** — palace, ingest, ask, lexical search, Claude Code import
-- **Phase 1** *(current)* — semantic search via MemPalace, hybrid SQLite fallback
-- **Phase 2** — `recall` / `thread` / `forgot` / `contradict` / `timeline`, file watcher
-- **Phase 3** — Gemini importer, packaging polish, browser extension
-- **Phase 4** — `evolve` (LoRA fine-tune from your drawers), web UI, browser extension
+- **Phase 0** — palace, ingest, ask, lexical search, Claude Code import ✅
+- **Phase 1** — semantic search via MemPalace, hybrid SQLite fallback,
+  source-filename hoist re-rank, themes, streaming answers with citations,
+  staged init, `mcp serve`, `dedup`, multi-turn REPL ✅
+- **Phase 2** *(current)* — `timeline` / `entities` via MemPalace knowledge
+  graph, batched ingest via `mempalace.miner`, OCR fallback for image PDFs,
+  file watcher, `export` / `import-palace` / `sync`
+- **Phase 3** — Gemini importer, browser extension, JSON output mode,
+  packaging polish
+- **Phase 4** — `evolve` (LoRA fine-tune from your drawers), web UI
 
 ## License
 
