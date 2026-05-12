@@ -151,6 +151,35 @@ def _prompt(status: "_Status | None" = None) -> str:
         return input("> ")
 
 
+def _print_help() -> None:
+    """Single-column help with aligned descriptions.
+
+    Reads from COMMAND_HELP so the in-shell help stays in sync with the
+    completer's display metadata. Adds a couple of REPL-only shortcuts
+    (`/clear`, `?`) that don't have completion entries. Uses ui.section
+    for a clean header.
+    """
+    from rich.text import Text
+
+    t = ui.theme()
+    extras = [
+        ("/clear", "clear conversation history"),
+        ("?", "alias for /help"),
+    ]
+    rows = sorted({**COMMAND_HELP, **dict(extras)}.items())
+    col = max(len(cmd) for cmd, _ in rows) + 2
+
+    ui.section("commands", "slash commands and shortcuts")
+    for cmd, desc in rows:
+        line = Text()
+        line.append("  ")
+        line.append(cmd, style=f"bold {t.primary}")
+        line.append(" " * (col - len(cmd)))
+        line.append(desc, style=t.muted)
+        ui.console().print(line)
+    ui.blank()
+
+
 def _print_assistant(answer: str, hits=None) -> None:
     """Print Miniton's reply. Tests assert exact body substrings."""
     ui.blank()
@@ -249,11 +278,10 @@ def _relevant_hits(question: str, hits):
 
 
 def _print_search_hits(hits) -> None:
-    """Render hits as compact stacked cards.
+    """Render hits as stacked tool_card surfaces.
 
-    Each hit gets a one-line header (cite + score) plus a single-line
-    preview, separated by a dim rule. This mirrors Claude Code's tool-
-    result presentation: clearly delineated but visually quiet.
+    Each hit becomes a small card: numbered index, short drawer id,
+    source basename, confidence chip, and a one-line dim preview.
     """
     from rich.text import Text
 
@@ -262,17 +290,12 @@ def _print_search_hits(hits) -> None:
     for idx, hit in enumerate(hits):
         preview = " ".join(hit.drawer.text.split())[:220]
         score = float(getattr(hit, "score", 0.0) or 0.0)
-        score_col = ui.score_color(score)
         header = Text()
-        header.append(f"[{idx + 1}]  ", style=t.muted)
+        header.append(f"{idx + 1}.  ", style=t.muted)
         header.append(hit.drawer.id[:8], style=t.secondary)
         header.append("  ", style=t.muted)
         header.append(Path(hit.drawer.source).name, style=t.muted)
-        header.append(f"  {score:0.2f}", style=score_col)
-        ui.console().print(header)
-        ui.console().print(f"  [{t.muted}]{preview}[/]")
-        if idx != len(hits) - 1:
-            ui.console().print(f"  [{t.rule}]·[/]")
+        ui.tool_card(header, preview, score=score)
     ui.blank()
 
 
@@ -579,11 +602,7 @@ def run() -> None:
             if text in {"/quit", "/exit", "quit", "exit"}:
                 break
             if text in {"/help", "?"}:
-                ui.console().print(
-                    "/add <path> · /search <query> · /sources · /forget-source <name> · "
-                    "/refresh <path> · /model [fast|better|strong] · /theme · /clear · "
-                    "/doctor · /reindex · /quit"
-                )
+                _print_help()
                 continue
             if text == "/clear":
                 history = []
