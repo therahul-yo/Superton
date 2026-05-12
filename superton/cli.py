@@ -304,12 +304,10 @@ def ask(
     mem = Memory(cfg)
     with ui.spinner("retrieving from palace"):
         raw_hits = mem.search(question, limit=max(k, 8))
-    from superton.shell import _looks_memory_specific, _relevant_hits
+    from superton.shell import _any_token_match, _looks_memory_specific, _relevant_hits
 
     hits = _relevant_hits(question, raw_hits)[:k]
-    if raw_hits and not hits and not _looks_memory_specific(question):
-        hits = raw_hits[:k]
-    if _looks_memory_specific(question) and not hits:
+    if _looks_memory_specific(question) and not _any_token_match(question, hits):
         ui.warn("no matching memory found")
         ui.hint("add the source first with [bold]superton add <path>[/bold]")
         mem.close()

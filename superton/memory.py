@@ -43,6 +43,39 @@ def _hash_id(text: str, source: str) -> str:
     return h.hexdigest()
 
 
+# Tokens shorter than 3 chars, numeric-only, or in the tiny stoplist below
+# are too noisy to drive a filename-match boost.
+_TOKEN_STOP = {
+    "and", "the", "from", "into", "this", "that", "with", "what", "pdf",
+    "doc", "docx", "txt", "md", "json", "log", "my", "of", "to", "in",
+}
+
+
+def _query_terms(query: str) -> set[str]:
+    """Lowercased alphanumeric tokens useful for source-name matching."""
+    cleaned = "".join(c.lower() if c.isalnum() else " " for c in query)
+    return {
+        t for t in cleaned.split()
+        if len(t) >= 3 and not t.isdigit() and t not in _TOKEN_STOP
+    }
+
+
+def _path_tokens(source: str) -> set[str]:
+    """Tokens drawn from the source filename stem (not the directory path).
+
+    We only look at the final path component so that `/Users/rahul/...` paths
+    in transcript logs do not give every random drawer a free boost on
+    queries that mention 'rahul'.
+    """
+    if not source:
+        return set()
+    # Drop any wing-style prefix like "claude-code:...".
+    tail = source.split(":", 1)[-1]
+    name = tail.rsplit("/", 1)[-1]
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return _query_terms(stem)
+
+
 class Memory:
     """Drawer store with semantic retrieval and SQLite fallback."""
 
@@ -121,6 +154,12 @@ class Memory:
 
         Returns an empty list on any error so the caller falls back to the
         existing paths. Errors are surfaced via `stats()['semantic_error']`.
+
+        We also apply a small source-match re-rank: if the query token set
+        overlaps with the filename stem of a hit, we bump its score. This
+        fights the common RAG failure where file-listing drawers (e.g. raw
+        `ls -la` output captured in Claude Code transcripts) embed closer to
+        the query than the actual document whose filename the user typed.
         """
         if not self._semantic_enabled():
             return []
@@ -128,12 +167,15 @@ class Memory:
             from mempalace.searcher import search_memories
         except ImportError:
             return []
+        # Fetch a wider candidate pool so the source-match re-rank has room
+        # to lift filename matches above file-listing noise.
+        candidate_pool = max(limit * 3, 12)
         try:
             res = search_memories(
                 query,
                 palace_path=str(self.cfg.semantic_dir),
                 collection_name=self.cfg.semantic_collection,
-                n_results=limit,
+                n_results=candidate_pool,
             )
         except Exception as e:
             self._semantic_error = str(e)
@@ -142,6 +184,8 @@ class Memory:
             if isinstance(res, dict):
                 self._semantic_error = str(res.get("error"))
             return []
+
+        query_tokens = _query_terms(query)
 
         hits: list[SearchHit] = []
         for row in res.get("results") or []:
@@ -169,9 +213,72 @@ class Memory:
                 score = float(row.get("similarity") or 0.0)
             except (TypeError, ValueError):
                 score = 0.0
+            # Source-match boost: if any informative query token appears in
+            # the filename stem, add a substantial bonus. Capped so it can't
+            # by itself dominate — it's a tiebreaker, not a gate.
+            if query_tokens:
+                source_tokens = _path_tokens(source)
+                overlap = query_tokens & source_tokens
+                if overlap:
+                    score += min(0.35, 0.12 + 0.08 * len(overlap))
             hits.append(SearchHit(drawer=drawer, score=score))
+        # When the query strongly names a file (e.g. "rahul resume"), the
+        # semantic retriever sometimes drops the actual document out of the
+        # candidate pool because noisy file-listing drawers score higher.
+        # Pull any source-name matches directly from SQLite and merge them
+        # in. This is a hard injection, not just a re-rank.
+        if query_tokens:
+            existing_ids = {h.drawer.id for h in hits}
+            hits.extend(self._hoist_source_matches(query_tokens, existing_ids))
+        # Re-sort by boosted score and trim to requested limit.
+        hits.sort(key=lambda h: h.score, reverse=True)
         self._semantic_error = None
-        return hits
+        return hits[:limit]
+
+    def _hoist_source_matches(
+        self, query_tokens: set[str], existing_ids: set[str], *, per_source: int = 2
+    ) -> list[SearchHit]:
+        """Find drawers whose source filename overlaps the query and inject
+        them with a high synthetic score. Handles the common case where the
+        user names a document ('resume', 'readme', 'notes') and the semantic
+        retriever missed the actual document in its top-N.
+        """
+        if not query_tokens:
+            return []
+        try:
+            rows = self._db.execute(
+                "SELECT DISTINCT source FROM drawers"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        matches: list[tuple[int, str]] = []
+        for row in rows:
+            source = row["source"]
+            source_tokens = _path_tokens(source)
+            overlap = query_tokens & source_tokens
+            if overlap:
+                matches.append((len(overlap), source))
+        if not matches:
+            return []
+        matches.sort(reverse=True)
+
+        hoisted: list[SearchHit] = []
+        for overlap_count, source in matches:
+            drawer_rows = self._db.execute(
+                "SELECT * FROM drawers WHERE source = ? ORDER BY created_at ASC LIMIT ?",
+                (source, per_source),
+            ).fetchall()
+            for dr in drawer_rows:
+                drawer = self._row_to_drawer(dr)
+                if drawer.id in existing_ids:
+                    continue
+                existing_ids.add(drawer.id)
+                # Synthetic high score — source-name match is a very strong
+                # user-intent signal. Kept below 1.0 so true semantic near-
+                # identicals can still win.
+                score = min(0.92, 0.65 + 0.07 * overlap_count)
+                hoisted.append(SearchHit(drawer=drawer, score=score))
+        return hoisted
 
     def _search_sqlite(self, query: str, *, limit: int = 5) -> list[SearchHit]:
         try:

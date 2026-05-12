@@ -151,17 +151,30 @@ def _looks_memory_specific(query: str) -> bool:
 
 
 def _relevant_hits(question: str, hits):
+    """Re-rank retrieval hits to prefer keyword-overlap, but never throw away
+    semantically strong matches.
+
+    Before Phase A (when retrieval was SQLite FTS + naive semantic), this was
+    a hard filter. With the MemPalace hybrid retriever it would reject
+    otherwise-correct hits just because the user's word isn't literally in
+    the drawer. We now treat keyword overlap as a bonus, not a gate.
+    """
+    if not hits:
+        return []
     tokens = _query_tokens(question)
     if not tokens:
-        return []
-    required = 2 if _looks_memory_specific(question) and len(tokens) > 1 else 1
-    relevant = []
-    for hit in hits:
+        return list(hits)
+    scored: list[tuple[float, int, object]] = []
+    for idx, hit in enumerate(hits):
         haystack = f"{Path(hit.drawer.source).name} {hit.drawer.text[:2500]}".lower()
         matches = sum(1 for token in tokens if token in haystack)
-        if matches >= required:
-            relevant.append(hit)
-    return relevant
+        # Keep the original retrieval score as the base; overlap nudges the
+        # order but cannot drop a drawer.
+        base = float(getattr(hit, "score", 0.0) or 0.0)
+        boost = 0.15 * matches
+        scored.append((base + boost, -idx, hit))
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [h for _, _, h in scored]
 
 
 def _print_search_hits(hits) -> None:
@@ -249,6 +262,22 @@ def _switch_theme(name: str) -> Config:
     return Config.load()
 
 
+def _any_token_match(question: str, hits) -> bool:
+    """True if at least one hit shares any meaningful token with the query.
+
+    Used to decide whether to refuse a memory-specific question. We only look
+    at token *presence* — the ranking of hits is handled by `_relevant_hits`.
+    """
+    tokens = _query_tokens(question)
+    if not tokens:
+        return False
+    for hit in hits:
+        haystack = f"{Path(hit.drawer.source).name} {hit.drawer.text[:2500]}".lower()
+        if any(token in haystack for token in tokens):
+            return True
+    return False
+
+
 def _should_retrieve(question: str) -> bool:
     normalized = question.lower().strip(" !?.")
     return normalized not in GREETINGS
@@ -257,9 +286,11 @@ def _should_retrieve(question: str) -> bool:
 def _answer(mem: Memory, model: Model, question: str) -> None:
     raw_hits = mem.search(question, limit=8) if _should_retrieve(question) else []
     hits = _relevant_hits(question, raw_hits)
-    if raw_hits and not hits and not _looks_memory_specific(question):
-        hits = raw_hits[:3]
-    if _looks_memory_specific(question) and not hits:
+    # For memory-specific queries (resume, "rahul", document, etc.) we refuse
+    # when no retrieved drawer shares even a single meaningful token with the
+    # query. This keeps Miniton from confabulating an answer from drawers
+    # that were semantically nearby but talk about something unrelated.
+    if _looks_memory_specific(question) and not _any_token_match(question, hits):
         _print_assistant(
             "I do not have matching memory for that. Add the resume or document first with "
             "`/add <path>` or paste the file path directly."
