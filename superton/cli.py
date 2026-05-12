@@ -27,7 +27,7 @@ from rich.table import Table
 
 from superton import __version__
 from superton.blackhole import play_boot, static_frame
-from superton.config import Config
+from superton.config import MODEL_PROFILES, Config, write_settings
 from superton.ingest import chunk_text, read_file, walk
 from superton.memory import Memory
 from superton.model import Model, ModelError, OllamaError
@@ -113,6 +113,58 @@ def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
         border_style="yellow",
     ))
     return typer.confirm("Pull this model now?", default=True)
+
+
+def _ingest_into_memory(mem: Memory, path: Path, *, wing: str, room: str) -> tuple[int, int, int]:
+    files = list(walk(path))
+    total_drawers = 0
+    skipped = 0
+    for f in files:
+        try:
+            text = read_file(f)
+        except (ValueError, RuntimeError, UnicodeDecodeError) as e:
+            err_console.print(f"  [dim]skip[/dim] {f.name}: {e}")
+            skipped += 1
+            continue
+        if not text.strip():
+            continue
+        for chunk in chunk_text(text):
+            mem.add(text=chunk, source=str(f), wing=wing, room=room)
+            total_drawers += 1
+        console.print(f"  [green]+[/green] {f.relative_to(path) if path.is_dir() else f.name}")
+    return len(files) - skipped, total_drawers, skipped
+
+
+def _build_miniton(cfg: Config, *, yes: bool) -> bool:
+    if shutil.which("ollama") is None:
+        console.print("[yellow]![/yellow] ollama not found in PATH")
+        console.print("  install: [link]https://ollama.com/download[/link]")
+        return False
+    model = Model(cfg)
+    if not model.ollama_ready():
+        console.print("[dim]starting ollama service...[/dim]")
+        if not model.start_ollama():
+            console.print("[yellow]![/yellow] could not start ollama automatically")
+            model.close()
+            return False
+    if not model.has_model(cfg.base_model):
+        if not _confirm_pull(
+            cfg.base_model,
+            f"Required for {cfg.model_profile} profile.",
+            yes=yes,
+        ):
+            model.close()
+            return False
+        subprocess.run(["ollama", "pull", cfg.base_model], check=False)
+    modelfile = _project_modelfile()
+    if modelfile is None:
+        console.print("[red]Modelfile not found[/red]")
+        model.close()
+        return False
+    rendered = _render_modelfile(modelfile, cfg)
+    ok = model.build(rendered)
+    model.close()
+    return ok
 
 
 @app.callback(invoke_without_command=True)
@@ -223,28 +275,30 @@ def add(
     """Ingest a file or directory into the palace."""
     cfg = _cfg()
     mem = Memory(cfg)
-    files = list(walk(path))
-    total_drawers = 0
-    skipped = 0
-
-    for f in files:
-        try:
-            text = read_file(f)
-        except (ValueError, RuntimeError, UnicodeDecodeError) as e:
-            err_console.print(f"  [dim]skip[/dim] {f.name}: {e}")
-            skipped += 1
-            continue
-        if not text.strip():
-            continue
-        for chunk in chunk_text(text):
-            mem.add(text=chunk, source=str(f), wing=wing, room=room)
-            total_drawers += 1
-        console.print(f"  [green]+[/green] {f.relative_to(path) if path.is_dir() else f.name}")
-
+    files, total_drawers, _skipped = _ingest_into_memory(mem, path, wing=wing, room=room)
     mem.close()
     console.print(
         f"\n[green]✓[/green] ingested [bold]{total_drawers}[/bold] drawers from "
-        f"{len(files) - skipped} file(s)"
+        f"{files} file(s)"
+    )
+
+
+@app.command()
+def refresh(
+    path: Path = typer.Argument(..., exists=True, help="file or directory to replace in memory"),
+    wing: str = typer.Option("default", "--wing", "-w"),
+    room: str = typer.Option("default", "--room", "-r"),
+) -> None:
+    """Forget existing drawers from a source path, then ingest it again."""
+    mem = Memory(_cfg())
+    removed = 0
+    for f in walk(path):
+        removed += mem.forget_source(str(f))
+    files, drawers, _skipped = _ingest_into_memory(mem, path, wing=wing, room=room)
+    mem.close()
+    console.print(
+        f"[green]✓[/green] refreshed {files} file(s): removed {removed} stale drawers, "
+        f"added {drawers}"
     )
 
 
@@ -373,6 +427,69 @@ def forget(drawer_id: str) -> None:
         console.print(f"[yellow]![/yellow] no drawer matched {drawer_id}")
 
 
+@app.command("forget-source")
+def forget_source(source: str) -> None:
+    """Remove every drawer from a source path or filename."""
+    mem = Memory(_cfg())
+    removed = mem.forget_source(source)
+    mem.close()
+    if removed:
+        console.print(f"[green]✓[/green] forgot {removed} drawer(s) from {source}")
+    else:
+        console.print(f"[yellow]![/yellow] no source matched {source}")
+
+
+@app.command()
+def sources(limit: int = typer.Option(30, "--limit", "-n")) -> None:
+    """List indexed source files."""
+    mem = Memory(_cfg())
+    rows = mem.sources(limit=limit)
+    mem.close()
+    table = Table(show_header=True, header_style="dim")
+    table.add_column("drawers", justify="right")
+    table.add_column("source")
+    for row in rows:
+        table.add_row(str(row["drawers"]), row["source"])
+    console.print(table)
+
+
+@app.command("model")
+def model_profile(
+    profile: str | None = typer.Argument(None, help="fast, better, or strong"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="accept model download prompts"),
+    build: bool = typer.Option(True, "--build/--no-build", help="rebuild Miniton after switching"),
+) -> None:
+    """Show or switch Miniton's model profile."""
+    cfg = _cfg()
+    if profile is None:
+        table = Table(show_header=True, header_style="dim")
+        table.add_column("profile")
+        table.add_column("model")
+        table.add_column("notes")
+        for name, data in MODEL_PROFILES.items():
+            marker = "*" if name == cfg.model_profile else " "
+            table.add_row(f"{marker} {name}", data["base_model"], data["label"])
+        console.print(table)
+        return
+    if profile not in MODEL_PROFILES:
+        console.print("[red]unknown profile[/red]: choose fast, better, or strong")
+        raise typer.Exit(1)
+    selected = MODEL_PROFILES[profile]
+    write_settings(
+        cfg.home,
+        model_profile=profile,
+        base_model=selected["base_model"],
+        hf_model=selected["hf_model"],
+    )
+    cfg = Config.load()
+    console.print(f"[green]✓[/green] model profile set to [bold]{profile}[/bold] ({cfg.base_model})")
+    if build:
+        if _build_miniton(cfg, yes=yes):
+            console.print(f"[green]✓[/green] rebuilt {cfg.model}")
+        else:
+            console.print("[yellow]![/yellow] profile saved, but model was not rebuilt")
+
+
 @app.command()
 def stats() -> None:
     """Palace statistics."""
@@ -415,6 +532,7 @@ def doctor() -> None:
     row("drawers", True, str(s["drawers"]))
     row("memory backend", True, cfg.memory_backend)
     row("model backend", True, cfg.model_backend)
+    row("model profile", True, f"{cfg.model_profile} · {cfg.base_model}")
 
     try:
         import mempalace

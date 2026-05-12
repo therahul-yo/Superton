@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from superton import __version__
-from superton.config import Config
+from superton.config import MODEL_PROFILES, Config, write_settings
 from superton.memory import Memory
 from superton.model import Model, ModelError
 
@@ -63,6 +63,13 @@ def _print_assistant(answer: str) -> None:
     console.print()
 
 
+def _run_with_spinner(label: str, work):
+    if not console.is_terminal:
+        return work()
+    with console.status(f"[dim]{label}[/dim]", spinner="dots"):
+        return work()
+
+
 def _print_intro(cfg: Config, mem: Memory) -> None:
     s = mem.stats()
     status = f"{s['drawers']}d · {s['wings']}w · {s['rooms']}r"
@@ -95,8 +102,6 @@ def _print_intro(cfg: Config, mem: Memory) -> None:
     console.print('Try: "what projects are in my resume?"  ·  /search rate limiting  ·  /stats')
     if s["drawers"] == 0:
         console.print("[yellow]⚠[/yellow] no drawers yet. Add a file with [bold]/add <path>[/bold].")
-    filler = max(3, min(10, console.height - 17))
-    console.print("\n" * filler, end="")
     console.print("[dim]" + "─" * min(console.width, 110) + "[/dim]")
 
 
@@ -173,6 +178,47 @@ def _print_search_hits(hits) -> None:
     console.print()
 
 
+def _print_sources(mem: Memory) -> None:
+    rows = mem.sources(limit=20)
+    console.print()
+    if not rows:
+        console.print("[dim]no sources indexed yet.[/dim]")
+        console.print()
+        return
+    for row in rows:
+        console.print(f"[cyan]{row['drawers']:>3}[/cyan]  {row['source']}")
+    console.print()
+
+
+def _print_model(cfg: Config) -> None:
+    console.print()
+    for name, data in MODEL_PROFILES.items():
+        marker = "*" if name == cfg.model_profile else " "
+        console.print(f"{marker} [bold]{name}[/bold]  {data['base_model']}  [dim]{data['label']}[/dim]")
+    console.print()
+
+
+def _switch_model(profile: str) -> Config:
+    if profile not in MODEL_PROFILES:
+        console.print()
+        console.print("[yellow]![/yellow] choose one of: fast, better, strong")
+        console.print()
+        return Config.load()
+    selected = MODEL_PROFILES[profile]
+    cfg = Config.load()
+    write_settings(
+        cfg.home,
+        model_profile=profile,
+        base_model=selected["base_model"],
+        hf_model=selected["hf_model"],
+    )
+    console.print()
+    console.print(f"[green]✓[/green] model profile set to [bold]{profile}[/bold] ({selected['base_model']})")
+    console.print("  run [bold]superton init --yes[/bold] to pull/rebuild if the model is not installed")
+    console.print()
+    return Config.load()
+
+
 def _should_retrieve(question: str) -> bool:
     normalized = question.lower().strip(" !?.")
     return normalized not in GREETINGS
@@ -213,9 +259,12 @@ def _answer(mem: Memory, model: Model, question: str) -> None:
             "Answer naturally and concisely."
         )
     try:
-        if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
-            model.start_ollama(timeout=5.0)
-        answer = "".join(model.generate(prompt, system=system)).strip()
+        def generate_answer() -> str:
+            if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
+                model.start_ollama(timeout=5.0)
+            return "".join(model.generate(prompt, system=system)).strip()
+
+        answer = _run_with_spinner("Miniton thinking", generate_answer)
     except ModelError:
         if hits:
             answer = (
@@ -246,7 +295,66 @@ def run() -> None:
             if text in {"/quit", "/exit", "quit", "exit"}:
                 break
             if text in {"/help", "?"}:
-                console.print("/add <path> · /search <query> · /stats · /quit")
+                console.print(
+                    "/add <path> · /search <query> · /sources · /forget-source <name> · "
+                    "/refresh <path> · /model [fast|better|strong] · /doctor · /reindex · /quit"
+                )
+                continue
+            if text == "/model":
+                _print_model(cfg)
+                continue
+            if text.startswith("/model "):
+                cfg = _switch_model(text.removeprefix("/model ").strip())
+                model.close()
+                model = Model(cfg)
+                continue
+            if text == "/doctor":
+                s = mem.stats()
+                console.print()
+                console.print(
+                    f"home {cfg.home}\n"
+                    f"model {cfg.model_profile} · {cfg.base_model}\n"
+                    f"memory {s['backend']} · {s['drawers']} drawers · semantic {s['semantic_enabled']}"
+                )
+                console.print()
+                continue
+            if text == "/sources":
+                _print_sources(mem)
+                continue
+            if text.startswith("/forget-source "):
+                source = text.removeprefix("/forget-source ").strip()
+                removed = mem.forget_source(source)
+                console.print()
+                if removed:
+                    console.print(f"[green]✓[/green] forgot {removed} drawer(s) from {source}")
+                else:
+                    console.print(f"[yellow]![/yellow] no source matched {source}")
+                console.print()
+                continue
+            if text.startswith("/refresh "):
+                path = Path(text.removeprefix("/refresh ").strip()).expanduser()
+                if not path.exists():
+                    console.print()
+                    console.print(f"[yellow]![/yellow] not found: {path}")
+                    console.print()
+                    continue
+                removed = 0
+                for file in path.rglob("*") if path.is_dir() else [path]:
+                    if file.is_file():
+                        removed += mem.forget_source(str(file))
+                files, drawers = _ingest_path(mem, path)
+                console.print()
+                console.print(
+                    f"[green]✓[/green] refreshed {files} file(s): "
+                    f"removed {removed}, added {drawers}"
+                )
+                console.print()
+                continue
+            if text == "/reindex":
+                total = mem.reindex_semantic()
+                console.print()
+                console.print(f"[green]✓[/green] reindexed {total} drawers")
+                console.print()
                 continue
             if text == "/stats":
                 s = mem.stats()

@@ -1,3 +1,5 @@
+![SuperTon black hole hero](docs/assets/superton-hero.png)
+
 # SuperTon
 
 > A tiny local LLM with infinite memory. Your second brain that never forgets.
@@ -78,6 +80,8 @@ superton search "how did we handle request throttling?"
 superton stats
 superton doctor
 superton reindex
+superton sources
+superton model better
 superton
 superton close
 ```
@@ -100,9 +104,13 @@ Inside the interactive shell, paste a file path directly to ingest it:
 | `superton list` | Show recent drawers |
 | `superton search "..."` | Semantic search across drawers with lexical fallback |
 | `superton forget <id>` | Remove a drawer |
+| `superton forget-source <path-or-name>` | Remove all drawers from one source |
+| `superton refresh <path>` | Reingest a source and remove stale chunks |
+| `superton sources` | List indexed source files |
 | `superton stats` | Palace statistics |
 | `superton doctor` | Check local runtime, memory, and model setup |
 | `superton reindex` | Rebuild semantic index from stored drawers |
+| `superton model [fast\|better\|strong]` | Show or switch Miniton model profile |
 | `superton close` | Stop running SuperTon model runners |
 | `superton import claude-code` | Import Claude Code session history |
 | `superton import chatgpt <export>` | Import ChatGPT `conversations.json` exports |
@@ -137,6 +145,21 @@ running on a machine that's *yours*. SuperTon does.
 `miniton`; by default it is built from `qwen2.5:1.5b-instruct` via Ollama.
 You can override the base with `SUPERTON_BASE_MODEL`. Exact recall comes from
 the palace drawers, not from model weights.
+
+Model profiles:
+
+| Profile | Ollama base | Use case |
+|---|---|---|
+| `fast` | `qwen2.5:1.5b-instruct` | lowest memory, quickest startup |
+| `better` | `qwen2.5:3b-instruct` | stronger answers on laptops |
+| `strong` | `qwen2.5:7b-instruct` | best local quality, heavier |
+
+Switch profile:
+
+```bash
+superton model better
+superton init --yes
+```
 
 If Ollama is not available, SuperTon can use Hugging Face Inference as a fallback:
 

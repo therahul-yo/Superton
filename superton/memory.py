@@ -132,6 +132,53 @@ class Memory:
         r = self._db.execute("SELECT * FROM drawers WHERE id = ?", (drawer_id,)).fetchone()
         return self._row_to_drawer(r) if r else None
 
+    def sources(self, *, limit: int = 100) -> list[dict]:
+        rows = self._db.execute(
+            """
+            SELECT source, COUNT(*) AS drawers, MAX(created_at) AS latest
+            FROM drawers
+            GROUP BY source
+            ORDER BY latest DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def source_matches(self, query: str) -> list[str]:
+        needle = query.strip()
+        if not needle:
+            return []
+        rows = self._db.execute("SELECT DISTINCT source FROM drawers").fetchall()
+        sources = [r["source"] for r in rows]
+        exact = [s for s in sources if s == needle]
+        if exact:
+            return exact
+        basename = [s for s in sources if s.rsplit("/", 1)[-1] == needle]
+        if basename:
+            return basename
+        needle_lower = needle.lower()
+        return [s for s in sources if needle_lower in s.lower()]
+
+    def forget_source(self, query: str) -> int:
+        sources = self.source_matches(query)
+        if not sources:
+            return 0
+        placeholders = ",".join("?" for _ in sources)
+        rows = self._db.execute(
+            f"SELECT id FROM drawers WHERE source IN ({placeholders})",
+            tuple(sources),
+        ).fetchall()
+        drawer_ids = [r["id"] for r in rows]
+        self._db.execute(
+            f"DELETE FROM drawers WHERE source IN ({placeholders})",
+            tuple(sources),
+        )
+        self._db.commit()
+        for drawer_id in drawer_ids:
+            self._delete_semantic(drawer_id)
+        return len(drawer_ids)
+
     def forget(self, drawer_id: str) -> bool:
         cur = self._db.execute("DELETE FROM drawers WHERE id = ?", (drawer_id,))
         self._db.commit()

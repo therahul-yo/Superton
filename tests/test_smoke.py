@@ -39,7 +39,24 @@ def test_chunk_long_text():
 def test_model_defaults_are_miniton(cfg: Config):
     assert cfg.model == "miniton"
     assert cfg.base_model == "qwen2.5:1.5b-instruct"
+    assert cfg.model_profile == "fast"
     assert cfg.memory_backend == "sqlite"
+
+
+def test_model_profile_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from superton.config import Config, write_settings
+
+    monkeypatch.setenv("SUPERTON_HOME", str(tmp_path))
+    write_settings(
+        tmp_path,
+        model_profile="better",
+        base_model="qwen2.5:3b-instruct",
+        hf_model="Qwen/Qwen2.5-3B-Instruct",
+    )
+    cfg = Config.load()
+    assert cfg.model_profile == "better"
+    assert cfg.base_model == "qwen2.5:3b-instruct"
+    assert cfg.hf_model == "Qwen/Qwen2.5-3B-Instruct"
 
 
 def test_modelfile_render_uses_configured_base(cfg: Config, tmp_path: Path):
@@ -176,6 +193,20 @@ def test_memory_forget(cfg: Config):
     d = mem.add(text="ephemeral note", source="x.md")
     assert mem.forget(d.id) is True
     assert mem.forget(d.id) is False
+    mem.close()
+
+
+def test_memory_sources_and_forget_source(cfg: Config):
+    mem = Memory(cfg)
+    mem.add(text="alpha", source="/tmp/a.txt")
+    mem.add(text="beta", source="/tmp/a.txt")
+    mem.add(text="gamma", source="/tmp/b.txt")
+    sources = mem.sources()
+    assert any(row["source"] == "/tmp/a.txt" and row["drawers"] == 2 for row in sources)
+    assert mem.source_matches("a.txt") == ["/tmp/a.txt"]
+    assert mem.forget_source("a.txt") == 2
+    assert not mem.search("alpha")
+    assert mem.search("gamma")
     mem.close()
 
 
