@@ -227,6 +227,9 @@ def rule(title: str | None = None) -> None:
 def section(title: str, subtitle: str | None = None) -> None:
     _console.print()
     line = Text()
+    # Small themed anchor (prompt glyph) gives each section header a visual tie
+    # to the active theme without being noisy.
+    line.append(f"{_current.prompt_glyph} ", style=_current.primary)
     line.append(title, style="bold")
     if subtitle:
         line.append(f"  {subtitle}", style=_current.muted)
@@ -269,6 +272,10 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None, a
     `anchor=True` uses the default ROUNDED border (for landing moments like
     the welcome / ready card). Otherwise we use a very subtle SIMPLE box —
     no heavy corners, just a thin separator vibe.
+
+    If `width` is not given, the panel shrinks to fit its content instead
+    of stretching to the console width — prevents the 'too wide' look on
+    big terminals.
     """
     _console.print(
         Panel(
@@ -277,6 +284,7 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None, a
             border_style=_current.rule,
             padding=(0, 1),
             width=width,
+            expand=width is not None,
             box=box.ROUNDED if anchor else box.SIMPLE,
         )
     )
@@ -391,28 +399,34 @@ def flash(content: Any, duration: float = 0.2) -> None:
 
 
 def header(cfg, stats: dict, cwd: Path | None = None) -> None:
-    """Production-feel launch card shown by the interactive shell and init."""
+    """Quiet launch card shown by the interactive shell and init.
+
+    Deliberately uses the SIMPLE panel border (not ROUNDED) and a single
+    left-aligned column. The goal is the Claude Code CLI feel — present
+    state up-front, but recede into the background once the user starts
+    typing. Only `next_steps_card()` keeps the louder ROUNDED panel.
+    """
     from superton import __version__
 
     cwd = cwd or Path.cwd()
     repo, branch = git_info(cwd)
     body = Text()
-    body.append("SuperTon", style=f"bold {_current.primary}")
-    body.append(f"  v{__version__}\n", style=_current.muted)
+    body.append("SuperTon ", style=f"bold {_current.primary}")
+    body.append(f"v{__version__}\n", style=_current.muted)
     body.append("\n")
     body.append("model   ", style=_current.muted)
-    body.append("Miniton", style="bold")
-    body.append(f"  {cfg.model_profile} · {cfg.base_model}\n", style=_current.muted)
+    body.append("Miniton ", style="bold")
+    body.append(f"{cfg.model_profile} · {cfg.base_model}\n", style=_current.muted)
     body.append("memory  ", style=_current.muted)
-    body.append("palace", style="bold")
+    body.append("palace  ", style="bold")
     body.append(
-        f"   {stats.get('drawers', 0)} drawers · "
+        f"{stats.get('drawers', 0)} drawers · "
         f"{stats.get('wings', 0)} wings · {stats.get('rooms', 0)} rooms\n",
         style=_current.muted,
     )
     body.append("theme   ", style=_current.muted)
-    body.append(_current.name, style="bold")
-    body.append(f"  {_current.label}\n", style=_current.muted)
+    body.append(f"{_current.name} ", style="bold")
+    body.append(f"{_current.label}\n", style=_current.muted)
     if repo:
         body.append("repo    ", style=_current.muted)
         body.append(repo, style="bold")
@@ -424,7 +438,7 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    panel(body, width=min(_console.width - 2, 74), anchor=True)
+    panel(body)
     _console.print()
 
 
@@ -476,62 +490,73 @@ def progress(description: str, total: int | None = None):
 
 
 def boot_splash(duration: float = 0.6) -> None:
-    """Brief fade-in header used on shell startup.
+    """Brief fade-in wordmark shown on shell startup.
 
-    A few frames of the primary-colored wordmark blending from muted to
-    primary. Non-terminal contexts get a single frame (no flicker).
+    Pure typography: the 'SuperTon' wordmark fades from muted → primary
+    over a few frames. The mascot is intentionally NOT drawn here — the
+    welcome panel that follows is its anchor, and rendering the mascot
+    twice reads as duplication on the screen.
     """
     from superton import __version__
 
+    wordmark_static = Text()
+    wordmark_static.append("SuperTon", style=f"bold {_current.primary}")
+    wordmark_static.append(f"  v{__version__}", style=_current.muted)
+
     if not _console.is_terminal:
-        _console.print(
-            f"[bold {_current.primary}]SuperTon[/] "
-            f"[{_current.muted}]v{__version__}[/]"
-        )
+        _console.print(wordmark_static)
         return
 
-    # Fade through a handful of muted steps then settle on primary.
-    frames = [
-        _current.muted,
-        _current.muted,
-        _current.secondary,
-        _current.primary,
-    ]
-    wordmark = "SuperTon"
-    version = f"  v{__version__}"
-    step = duration / max(len(frames), 1)
+    steps = [_current.muted, _current.muted, _current.secondary, _current.primary]
+    step_time = duration / max(len(steps), 1)
     with Live("", console=_console, refresh_per_second=24, transient=True) as live:
-        for color in frames:
-            t = Text()
-            t.append(wordmark, style=f"bold {color}")
-            t.append(version, style=_current.muted)
-            live.update(t)
-            time.sleep(step)
-    # Final static frame stays in scrollback.
-    t = Text()
-    t.append(wordmark, style=f"bold {_current.primary}")
-    t.append(version, style=_current.muted)
-    _console.print(t)
+        for color in steps:
+            wm = Text()
+            wm.append("SuperTon", style=f"bold {color}")
+            wm.append(f"  v{__version__}", style=_current.muted)
+            live.update(wm)
+            time.sleep(step_time)
+
+    _console.print(wordmark_static)
 
 
 def citations(hits) -> None:
-    """Compact `Sources` footer listing the drawers used for an answer."""
+    """Compact single-line `sources` footer.
+
+    Renders all cited drawers on one row as numbered badges so the footer
+    stays above the fold even when the answer is long. Multi-line fallback
+    only kicks in if the row would not fit a typical 100-column terminal.
+    """
     if not hits:
         return
     _console.print()
-    _console.print(f"[{_current.muted}]sources[/]")
+    badges: list[str] = []
     for i, h in enumerate(hits, 1):
         src = Path(h.drawer.source).name
-        _console.print(
-            f"  [{_current.muted}]{i}.[/] "
+        badges.append(
+            f"[{_current.muted}][{i}][/] "
             f"{style_id(h.drawer.id[:8])} "
             f"{style_path(src)}"
         )
+    # Rough width budget — fall back to one-per-line if the joined badge
+    # row would wrap. Console.width is None in some test contexts.
+    width = _console.width or 100
+    joined_plain = "  ".join(
+        f"[{i}] {h.drawer.id[:8]} {Path(h.drawer.source).name}"
+        for i, h in enumerate(hits, 1)
+    )
+    label = f"[{_current.muted}]sources[/]"
+    if len(joined_plain) + len("sources  ") <= width:
+        _console.print(f"{label}  " + "  ".join(badges))
+    else:
+        _console.print(label)
+        for badge in badges:
+            _console.print(f"  {badge}")
 
 
 def typing_cursor(char: str = "▎") -> str:
     """Inline styled cursor for streaming output."""
-    return f"[{_current.primary}]{char}[/]"
+    return f"[{_current.muted}]{char}[/]"
 
 
 # --- staged flow, markdown, score coloring, next-steps card -------------------
@@ -611,7 +636,7 @@ def next_steps_card(cfg) -> None:
     body.append("model    ", style=_current.muted)
     body.append(f"Miniton · {cfg.model_profile} · {cfg.base_model}", style=_current.muted)
 
-    panel(body, title="ready", width=min(_console.width - 2, 78), anchor=True)
+    panel(body, title="ready", anchor=True)
 
 
 def welcome_tour(cfg, stats: dict) -> None:
@@ -655,8 +680,9 @@ def stream_answer(token_iter, label: str = "Miniton") -> str:
                 buf.append(tok)
                 running = "".join(buf)
                 t = Text(running)
-                # Show a soft cursor at the tail while streaming.
-                t.append("▎", style=_current.primary)
+                # Cursor stays muted so streamed content reads as the focus
+                # of the screen, not a glowing tail. Matches Claude Code.
+                t.append("▎", style=_current.muted)
                 live.update(t)
     else:
         for tok in token_iter:

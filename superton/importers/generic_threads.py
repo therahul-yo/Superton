@@ -56,18 +56,27 @@ class GenericThreadImporter:
                 return raw
         return raw
 
-    def import_all(self, root: Path | None = None) -> tuple[int, int]:
+    def import_all(
+        self, root: Path | None = None, *, replace: bool = False
+    ) -> tuple[int, int]:
         files = 0
         drawers = 0
+        known = {row["source"] for row in self.memory.sources(limit=10_000)}
         for path in self.discover(root):
+            source = f"{self.name}:{path.name}"
+            if replace:
+                self.memory.forget_source(source)
+            elif source in known:
+                continue
             text = self._read(path).strip()
             if not text:
                 continue
             files += 1
+            known.add(source)
             for chunk in chunk_text(text):
                 self.memory.add(
                     text=chunk,
-                    source=f"{self.name}:{path.name}",
+                    source=source,
                     wing=self.name,
                     room=path.parent.name or "threads",
                     metadata={"path": str(path)},

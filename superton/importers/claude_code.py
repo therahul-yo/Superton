@@ -47,8 +47,25 @@ class ClaudeCodeImporter:
             return
         yield from root.rglob("*.jsonl")
 
-    def import_session(self, path: Path, *, wing: str = "claude-code") -> int:
+    def import_session(
+        self,
+        path: Path,
+        *,
+        wing: str = "claude-code",
+        replace: bool = False,
+        known_sources: set[str] | None = None,
+    ) -> int:
         room = path.parent.name
+        source = f"claude-code:{path.name}"
+        if replace:
+            self.memory.forget_source(source)
+        else:
+            existing = known_sources if known_sources is not None else {
+                row["source"] for row in self.memory.sources(limit=10_000)
+            }
+            if source in existing:
+                # Source already indexed — skip rather than silently double up.
+                return 0
         count = 0
         with path.open("r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -76,12 +93,16 @@ class ClaudeCodeImporter:
                 count += 1
         return count
 
-    def import_all(self, root: Path | None = None) -> tuple[int, int]:
+    def import_all(
+        self, root: Path | None = None, *, replace: bool = False
+    ) -> tuple[int, int]:
         sessions = 0
         drawers = 0
+        known = {row["source"] for row in self.memory.sources(limit=10_000)}
         for session in self.discover(root):
-            n = self.import_session(session)
+            n = self.import_session(session, replace=replace, known_sources=known)
             if n:
                 sessions += 1
                 drawers += n
+                known.add(f"claude-code:{session.name}")
         return sessions, drawers

@@ -133,12 +133,23 @@ class Memory:
             room=room,
             metadata=metadata or {},
         )
-        self._db.execute(
+        cur = self._db.execute(
             "INSERT OR IGNORE INTO drawers (id, text, source, wing, room, created_at, metadata)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (d.id, d.text, d.source, d.wing, d.room, d.created_at, json.dumps(d.metadata)),
         )
         self._db.commit()
+        # Insert-time dedup: when the (text, source) pair already exists,
+        # SQLite ignores the insert (id is content-addressed). Skip the
+        # semantic upsert too — it's idempotent but doing it for every
+        # duplicate during a re-ingest is wasted compute (and re-runs all
+        # the embedding model work). Return the existing drawer so callers
+        # still see a stable Drawer object.
+        if cur.rowcount == 0:
+            existing = self.get(d.id)
+            if existing is not None:
+                return existing
+            return d
         self._index_semantic(d)
         return d
 
@@ -153,6 +164,31 @@ class Memory:
         if semantic_hits:
             return semantic_hits
         return self._search_sqlite(query, limit=limit)
+
+    _mempalace_kwargs_cache: dict | None = None
+
+    @classmethod
+    def _mempalace_search_kwargs(cls, fn) -> dict:
+        """Return tuning kwargs accepted by the installed mempalace.search_memories.
+
+        Cached on the class — `inspect.signature` is cheap but the lookup
+        runs on every search and there's no reason to repeat it.
+        """
+        if cls._mempalace_kwargs_cache is not None:
+            return cls._mempalace_kwargs_cache
+        import inspect
+
+        try:
+            params = inspect.signature(fn).parameters
+        except (TypeError, ValueError):
+            cls._mempalace_kwargs_cache = {}
+            return cls._mempalace_kwargs_cache
+        kwargs: dict = {}
+        # Hybrid v4 tuned variant — uses BM25 ∪ vector candidates.
+        if "candidate_strategy" in params:
+            kwargs["candidate_strategy"] = "union"
+        cls._mempalace_kwargs_cache = kwargs
+        return kwargs
 
     def _search_mempalace(self, query: str, *, limit: int) -> list[SearchHit]:
         """Use `mempalace.searcher.search_memories` as the primary retriever.
@@ -175,12 +211,18 @@ class Memory:
         # Fetch a wider candidate pool so the source-match re-rank has room
         # to lift filename matches above file-listing noise.
         candidate_pool = max(limit * 3, 12)
+        # Pin the MemPalace hybrid-v4 "union" strategy when available: it
+        # also pulls BM25 candidates into the rerank pool, which is what
+        # raises raw R@5 from 96.6% → 98.4% on LongMemEval. Detected via
+        # signature introspection so older mempalace versions still work.
+        kwargs = self._mempalace_search_kwargs(search_memories)
         try:
             res = search_memories(
                 query,
                 palace_path=str(self.cfg.semantic_dir),
                 collection_name=self.cfg.semantic_collection,
                 n_results=candidate_pool,
+                **kwargs,
             )
         except Exception as e:
             self._semantic_error = str(e)

@@ -188,18 +188,6 @@ class BlackHole:
             self._live.__exit__(*exc)
 
 
-def play_boot(console: Console, duration: float = 1.6) -> None:
-    """Play the boot animation for `duration` seconds, then exit."""
-    fps = 24
-    end = time.time() + duration
-    with Live(console=console, refresh_per_second=fps, transient=False) as live:
-        while time.time() < end:
-            t = time.time()
-            live.update(render_frame(t))
-            time.sleep(1 / fps)
-        live.update(render_frame(time.time()))
-
-
 def static_frame() -> Text:
     """Single frame for static contexts (CI, --no-animation)."""
     return render_frame(0.0)
