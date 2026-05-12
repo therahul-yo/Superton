@@ -36,7 +36,7 @@ COMMAND_HELP = {
 def _prompt() -> str:
     try:
         from prompt_toolkit import prompt
-        from prompt_toolkit.completion import Completer, Completion, FuzzyCompleter
+        from prompt_toolkit.completion import Completer, Completion
         from prompt_toolkit.formatted_text import HTML
         from prompt_toolkit.history import FileHistory
         from prompt_toolkit.lexers import Lexer
@@ -51,19 +51,22 @@ def _prompt() -> str:
                 if len(parts) == 2 and parts[0] == "/model":
                     word = parts[-1]
                     for profile in MODEL_PROFILES:
-                        if profile.startswith(word):
+                        if profile.startswith(word) or word in profile:
                             yield Completion(profile, start_position=-len(word))
                     return
                 if len(parts) == 2 and parts[0] == "/theme":
                     word = parts[-1]
                     for name in ui.THEMES:
-                        if name.startswith(word):
+                        if name.startswith(word) or word in name:
                             yield Completion(name, start_position=-len(word))
                     return
                 if " " in text:
                     return
+                # Prefix match + loose substring match so typing '/th' matches
+                # '/theme' and typing '/ourc' matches '/sources'.
                 for command, help_text in COMMAND_HELP.items():
-                    if command.startswith(text):
+                    stripped = text.lstrip("/")
+                    if command.startswith(text) or (stripped and stripped in command):
                         yield Completion(
                             command,
                             start_position=-len(text),
@@ -105,7 +108,7 @@ def _prompt() -> str:
             placeholder=HTML(
                 "<gray>Ask from memory, paste a file path, or type /search &lt;query&gt;</gray>"
             ),
-            completer=FuzzyCompleter(SlashCompleter()),
+            completer=SlashCompleter(),
             complete_while_typing=True,
             history=history,
             lexer=SuperTonLexer(),
