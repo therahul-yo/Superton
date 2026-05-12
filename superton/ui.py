@@ -471,7 +471,10 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    _console.print(themed_mini_mascot(), justify="center")
+    # The art is ~135 cols wide; disable wrapping so it renders exactly as
+    # authored, even on narrower terminals. Users with narrow windows will
+    # see slight right-side overflow which is acceptable for the mascot.
+    _console.print(themed_mini_mascot(), no_wrap=True, overflow="ignore", crop=False)
     panel(body, width=min(_console.width - 2, 74), anchor=True)
     _console.print()
 
