@@ -105,10 +105,73 @@ class Memory:
         return d
 
     def search(self, query: str, *, limit: int = 5) -> list[SearchHit]:
+        # Phase A: prefer MemPalace's benchmarked searcher (hybrid vector + BM25
+        # with closet boosting). Gracefully fall back to our in-process semantic
+        # search, and finally to SQLite FTS5.
+        mp_hits = self._search_mempalace(query, limit=limit)
+        if mp_hits:
+            return mp_hits
         semantic_hits = self._search_semantic(query, limit=limit)
         if semantic_hits:
             return semantic_hits
         return self._search_sqlite(query, limit=limit)
+
+    def _search_mempalace(self, query: str, *, limit: int) -> list[SearchHit]:
+        """Use `mempalace.searcher.search_memories` as the primary retriever.
+
+        Returns an empty list on any error so the caller falls back to the
+        existing paths. Errors are surfaced via `stats()['semantic_error']`.
+        """
+        if not self._semantic_enabled():
+            return []
+        try:
+            from mempalace.searcher import search_memories
+        except ImportError:
+            return []
+        try:
+            res = search_memories(
+                query,
+                palace_path=str(self.cfg.semantic_dir),
+                collection_name=self.cfg.semantic_collection,
+                n_results=limit,
+            )
+        except Exception as e:
+            self._semantic_error = str(e)
+            return []
+        if not isinstance(res, dict) or res.get("error"):
+            if isinstance(res, dict):
+                self._semantic_error = str(res.get("error"))
+            return []
+
+        hits: list[SearchHit] = []
+        for row in res.get("results") or []:
+            text = (row.get("text") or "").strip()
+            source = row.get("source_file") or ""
+            if not text:
+                continue
+            drawer_id = _hash_id(text, source)
+            drawer = self.get(drawer_id)
+            if drawer is None:
+                drawer = Drawer(
+                    id=drawer_id,
+                    text=text,
+                    source=source,
+                    wing=row.get("wing") or "default",
+                    room=row.get("room") or "default",
+                    created_at=time.time(),
+                    metadata={
+                        "matched_via": row.get("matched_via"),
+                        "bm25_score": row.get("bm25_score"),
+                        "similarity": row.get("similarity"),
+                    },
+                )
+            try:
+                score = float(row.get("similarity") or 0.0)
+            except (TypeError, ValueError):
+                score = 0.0
+            hits.append(SearchHit(drawer=drawer, score=score))
+        self._semantic_error = None
+        return hits
 
     def _search_sqlite(self, query: str, *, limit: int = 5) -> list[SearchHit]:
         try:
