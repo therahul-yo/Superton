@@ -12,7 +12,7 @@ Design goals:
 Themes are chosen by, in order:
   1. `SUPERTON_THEME` environment variable
   2. `theme = "..."` in the persisted config file
-  3. the built-in default `nebula`
+  3. the built-in default `claude` (muted neutrals)
 """
 
 from __future__ import annotations
@@ -64,32 +64,57 @@ class Theme:
 # Four hand-tuned themes. Colors are hex where we want fine control and
 # named rich colors (e.g. "grey50") where terminal remapping is desirable.
 THEMES: dict[str, Theme] = {
-    "nebula": Theme(
-        name="nebula",
-        label="amber + violet · default",
-        primary="#FFD93D",
-        secondary="#87D1FF",
-        muted="grey50",
-        success="#7FE79B",
-        warning="#FFB02E",
-        error="#F0471F",
-        info="#87D1FF",
-        neutral="white",
+    "claude": Theme(
+        # A muted neutral palette that reads like the Claude Code CLI:
+        # warm-cream accent, mostly greyscale, very low saturation. The
+        # accent only appears for actionable surfaces (prompt, run state,
+        # success). Most output is muted greys so streamed answers and
+        # source cards stand out.
+        name="claude",
+        label="muted neutrals · claude code feel",
+        primary="#D4A26A",
+        secondary="#C9C6BE",
+        muted="grey54",
+        success="#A8C99A",
+        warning="#D9A55B",
+        error="#D97A6C",
+        info="#C9C6BE",
+        neutral="#E8E5DE",
         rule="grey30",
-        prompt="#FFD93D",
-        prompt_glyph="❍",
-        bullet="›",
+        prompt="#D4A26A",
+        prompt_glyph="›",
+        bullet="·",
+    ),
+    "nebula": Theme(
+        # Quieter than before — the previous palette pushed pure-yellow
+        # primary against pure-cyan secondary, which read as decorative.
+        # New palette desaturates both and pulls them closer together so
+        # the chrome stops competing with content.
+        name="nebula",
+        label="amber + sky · default",
+        primary="#E8C66A",
+        secondary="#9CC2E0",
+        muted="grey54",
+        success="#8FD0A4",
+        warning="#E8B25A",
+        error="#E27160",
+        info="#9CC2E0",
+        neutral="#E8E5DE",
+        rule="grey30",
+        prompt="#E8C66A",
+        prompt_glyph="›",
+        bullet="·",
     ),
     "mono": Theme(
         name="mono",
         label="monochrome · bold only",
         primary="bold white",
-        secondary="bold grey70",
+        secondary="grey78",
         muted="grey50",
         success="bold white",
-        warning="bold grey82",
+        warning="grey82",
         error="bold red",
-        info="bold grey82",
+        info="grey82",
         neutral="white",
         rule="grey30",
         prompt="bold white",
@@ -99,38 +124,38 @@ THEMES: dict[str, Theme] = {
     "solar": Theme(
         name="solar",
         label="warm amber · sunrise",
-        primary="#FFB02E",
-        secondary="#FFD37A",
+        primary="#E8A452",
+        secondary="#E8C887",
         muted="#8C6F2A",
-        success="#FFD37A",
-        warning="#FFB02E",
-        error="#E04A1F",
-        info="#FFEAB2",
-        neutral="#FFEFCC",
+        success="#E8C887",
+        warning="#E8A452",
+        error="#D9614A",
+        info="#F0DCA8",
+        neutral="#F2E2BC",
         rule="#6B531F",
-        prompt="#FFB02E",
-        prompt_glyph="◉",
-        bullet="▸",
+        prompt="#E8A452",
+        prompt_glyph="›",
+        bullet="·",
     ),
     "frost": Theme(
         name="frost",
         label="cool cyan · arctic",
-        primary="#87D1FF",
-        secondary="#B7E4FF",
+        primary="#7FB8DE",
+        secondary="#A6D0EA",
         muted="#5C7A94",
-        success="#7FE7C1",
-        warning="#FFD37A",
-        error="#F98B9B",
-        info="#87D1FF",
-        neutral="#E8F2FF",
+        success="#84D0B5",
+        warning="#E8C887",
+        error="#E08B9A",
+        info="#A6D0EA",
+        neutral="#D8E6F2",
         rule="#3E5569",
-        prompt="#87D1FF",
-        prompt_glyph="◇",
-        bullet="›",
+        prompt="#7FB8DE",
+        prompt_glyph="›",
+        bullet="·",
     ),
 }
 
-DEFAULT_THEME = "nebula"
+DEFAULT_THEME = "claude"
 
 
 def _resolve_theme_name() -> str:
@@ -225,15 +250,56 @@ def rule(title: str | None = None) -> None:
 
 
 def section(title: str, subtitle: str | None = None) -> None:
+    """Section heading: thin colored bar, bold title, dim subtitle.
+
+    Inspired by Claude Code's section break — the colored bar serves as a
+    visual anchor that scales down better than a full prompt glyph when
+    nested in already-busy output.
+    """
     _console.print()
     line = Text()
-    # Small themed anchor (prompt glyph) gives each section header a visual tie
-    # to the active theme without being noisy.
-    line.append(f"{_current.prompt_glyph} ", style=_current.primary)
+    line.append("▎ ", style=_current.primary)
     line.append(title, style="bold")
     if subtitle:
         line.append(f"  {subtitle}", style=_current.muted)
     _console.print(line)
+
+
+def divider(label: str | None = None) -> None:
+    """Quiet horizontal divider — dim line, optional dim label inline.
+
+    Used to break up REPL turns and tool-result groupings without the
+    heavier visual weight of a full `rule()`.
+    """
+    if label:
+        _console.print(f"[{_current.rule}]───[/] [{_current.muted}]{label}[/]")
+    else:
+        _console.print(f"[{_current.rule}]─[/]")
+
+
+def tool_card(header: Any, body: Any, *, score: float | None = None) -> None:
+    """Compact bordered card for a single tool-style result.
+
+    Used by search hits and other retrieval surfaces. Quieter than a
+    full panel — no title strip, just a thin left edge that ties the
+    header to the body. Optional `score` renders as a confidence chip.
+    """
+    line = Text()
+    line.append("▎ ", style=_current.rule)
+    if isinstance(header, Text):
+        line.append_text(header)
+    else:
+        line.append(str(header))
+    if score is not None:
+        line.append(f"  {score:0.2f}", style=score_color(score))
+    _console.print(line)
+    if isinstance(body, Text):
+        rendered = Text()
+        rendered.append("  ", style=_current.rule)
+        rendered.append_text(body)
+        _console.print(rendered)
+    else:
+        _console.print(f"  [{_current.muted}]{body}[/]")
 
 
 # --- structured output --------------------------------------------------------
@@ -612,24 +678,33 @@ def score_color(score: float) -> str:
 
 def next_steps_card(cfg) -> None:
     """Polished 'you're ready' panel shown at the end of init and by
-    `superton welcome`."""
+    `superton welcome`.
+
+    Layout is two clean clusters — `try one of` and `power commands` —
+    each rendered as command + dim hint pairs with consistent column
+    alignment, so the eye can scan vertically.
+    """
+
+    def _row(body: Text, cmd: str, hint: str, *, col: int = 38) -> None:
+        pad = max(1, col - len(cmd))
+        body.append(f"  {cmd}", style="bold")
+        body.append(" " * pad)
+        body.append(f"{hint}\n", style=_current.muted)
+
     body = Text()
-    body.append("SuperTon is ready.\n", style=f"bold {_current.primary}")
+    body.append("SuperTon is ready", style=f"bold {_current.primary}")
+    body.append("  · local · private\n", style=_current.muted)
     body.append("\n")
-    body.append("Try one of:\n", style=_current.muted)
-    body.append("  superton add ~/notes\n", style="bold")
-    body.append("  superton import claude-code\n", style="bold")
-    body.append('  superton ask "what did I decide about X?"\n', style="bold")
-    body.append("  superton                              ", style="bold")
-    body.append("# interactive shell\n", style=_current.muted)
+    body.append("try one of\n", style=_current.muted)
+    _row(body, "superton add ~/notes", "ingest a file or folder")
+    _row(body, "superton import claude-code", "pull in past Claude Code sessions")
+    _row(body, 'superton ask "what did I decide?"', "answer grounded in your palace")
+    _row(body, "superton", "open the interactive shell")
     body.append("\n")
-    body.append("Power commands:\n", style=_current.muted)
-    body.append("  superton theme                        ", style="bold")
-    body.append("# change look & feel\n", style=_current.muted)
-    body.append("  superton mcp serve                    ", style="bold")
-    body.append("# expose palace to Claude/Cursor\n", style=_current.muted)
-    body.append("  superton dedup --dry-run              ", style="bold")
-    body.append("# find near-duplicates\n", style=_current.muted)
+    body.append("power commands\n", style=_current.muted)
+    _row(body, "superton theme", "change look & feel")
+    _row(body, "superton mcp serve", "expose palace to Claude / Cursor")
+    _row(body, "superton dedup --dry-run", "find near-duplicate drawers")
     body.append("\n")
     body.append("palace   ", style=_current.muted)
     body.append(f"{cfg.palace_dir}\n", style=_current.muted)

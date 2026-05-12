@@ -69,7 +69,7 @@ class Config:
     memory_backend: str = "hybrid"
     semantic_collection: str = "superton_drawers"
     offline: bool = True
-    theme: str = "nebula"
+    theme: str = "claude"
 
     @classmethod
     def load(cls) -> Config:
@@ -106,7 +106,7 @@ class Config:
             ),
             theme=os.environ.get(
                 "SUPERTON_THEME",
-                settings.get("theme", "nebula"),
+                settings.get("theme", "claude"),
             ),
         )
 
