@@ -103,6 +103,7 @@ def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
         f"{purpose}\n\n"
         f"[{ui.theme().muted}]This downloads model weights to your local Ollama store.[/]",
         title="Model Download",
+        anchor=True,
     )
     return typer.confirm("Pull this model now?", default=True)
 
@@ -389,9 +390,9 @@ def ask(
             preview = h.drawer.text.replace("\n", " ")[:80]
             score_style = ui.score_color(h.score)
             table.add_row(
-                h.drawer.id[:8],
+                ui.style_id(h.drawer.id[:8]),
                 f"[{score_style}]{h.score:.2f}[/]",
-                Path(h.drawer.source).name,
+                ui.style_path(Path(h.drawer.source).name),
                 preview,
             )
         if not hits:
@@ -464,7 +465,12 @@ def list_drawers(
     table = ui.make_table("id", "wing/room", "source", "preview")
     for d in rows:
         preview = d.text.replace("\n", " ")[:70]
-        table.add_row(d.id[:8], f"{d.wing}/{d.room}", Path(d.source).name, preview)
+        table.add_row(
+            ui.style_id(d.id[:8]),
+            f"{d.wing}/{d.room}",
+            ui.style_path(Path(d.source).name),
+            preview,
+        )
     ui.print_table(table)
 
 
@@ -555,6 +561,10 @@ def model_profile(
         hf_model=selected["hf_model"],
     )
     cfg = Config.load()
+    ui.flash(
+        f"[bold {ui.theme().primary}]model[/] → "
+        f"[bold]{profile}[/]  [{ui.theme().muted}]{cfg.base_model}[/]"
+    )
     ui.ok(f"model profile → {profile}", cfg.base_model)
     if build:
         if _build_miniton(cfg, yes=yes):
@@ -592,6 +602,15 @@ def theme_cmd(
         raise typer.Exit(1)
     write_settings(cfg.home, theme=name)
     ui.set_theme(name)
+    # 200ms transition flash showing the new theme's swatch.
+    t = ui.theme()
+    swatch = (
+        f"[bold {t.primary}]SuperTon[/] → "
+        f"[{t.primary}]██[/] [{t.secondary}]██[/] "
+        f"[{t.success}]✓[/] [{t.warning}]![/] [{t.error}]✗[/]  "
+        f"[{t.muted}]{t.label}[/]"
+    )
+    ui.flash(swatch)
     ui.ok(f"theme → {name}", ui.theme().label)
 
 

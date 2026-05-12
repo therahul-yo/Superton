@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rich import box
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
@@ -262,7 +263,13 @@ def print_table(t: Table) -> None:
     _console.print(t)
 
 
-def panel(content: Any, *, title: str | None = None, width: int | None = None) -> None:
+def panel(content: Any, *, title: str | None = None, width: int | None = None, anchor: bool = False) -> None:
+    """Render a panel around content.
+
+    `anchor=True` uses the default ROUNDED border (for landing moments like
+    the welcome / ready card). Otherwise we use a very subtle SIMPLE box —
+    no heavy corners, just a thin separator vibe.
+    """
     _console.print(
         Panel(
             content,
@@ -270,6 +277,7 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None) -
             border_style=_current.rule,
             padding=(0, 1),
             width=width,
+            box=box.ROUNDED if anchor else box.SIMPLE,
         )
     )
 
@@ -292,10 +300,94 @@ def prompt_glyph() -> str:
 
 
 def cite(drawer_id: str | None, source: str | None) -> str:
-    """Short inline citation — `cyan_id grey_filename`."""
+    """Short inline citation — `cyan_id muted_filename`."""
     short = (drawer_id or "-")[:8]
     name = Path(source).name if source else ""
-    return f"[{_current.secondary}]{short}[/] [{_current.muted}]{name}[/]"
+    return f"{style_id(short)} {style_path(name)}"
+
+
+# --- semantic styling ---------------------------------------------------------
+# A single place to decide how paths, ids, commands, and key bindings are
+# rendered. Callers should prefer these over ad-hoc f-strings so the look
+# stays consistent across the app.
+
+
+def style_path(s: Any) -> str:
+    """Filesystem paths and filenames — always muted."""
+    return f"[{_current.muted}]{s}[/]"
+
+
+def style_id(s: Any) -> str:
+    """Drawer ids, commit SHAs, session ids — always the secondary accent."""
+    return f"[{_current.secondary}]{s}[/]"
+
+
+def style_cmd(s: Any) -> str:
+    """Runnable commands — bold primary."""
+    return f"[bold {_current.primary}]{s}[/]"
+
+
+def style_kbd(s: Any) -> str:
+    """Keyboard shortcut, rendered like [key]."""
+    return (
+        f"[{_current.muted}]\\[[/]"
+        f"[{_current.secondary}]{s}[/]"
+        f"[{_current.muted}]\\][/]"
+    )
+
+
+# --- git project awareness ----------------------------------------------------
+
+def git_info(start: Path | None = None) -> tuple[str | None, str | None]:
+    """Return (repo_name, branch) if `start` is inside a git repository,
+    otherwise (None, None). File-based detection — no subprocess calls."""
+    if start is None:
+        start = Path.cwd()
+    try:
+        current = start.resolve()
+    except OSError:
+        return None, None
+    while True:
+        git_entry = current / ".git"
+        if git_entry.is_dir():
+            head_path = git_entry / "HEAD"
+        elif git_entry.is_file():
+            # Linked worktree: .git is a file pointing to the real gitdir.
+            try:
+                text = git_entry.read_text(encoding="utf-8").strip()
+            except OSError:
+                return None, None
+            if not text.startswith("gitdir: "):
+                return None, None
+            real_git = Path(text[len("gitdir: "):]).expanduser()
+            if not real_git.is_absolute():
+                real_git = (current / real_git).resolve()
+            head_path = real_git / "HEAD"
+        else:
+            if current.parent == current:
+                return None, None
+            current = current.parent
+            continue
+        try:
+            head = head_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return current.name, None
+        branch = head.rsplit("/", 1)[-1] if head.startswith("ref: ") else head[:7]
+        return current.name, branch
+
+
+# --- micro-animations ---------------------------------------------------------
+
+def flash(content: Any, duration: float = 0.2) -> None:
+    """Briefly display `content` in a transient Live frame and clear it.
+
+    Used for 200 ms confirmation animations on theme/model switches.
+    Non-terminal contexts are a no-op to avoid noise.
+    """
+    if not _console.is_terminal or duration <= 0:
+        return
+    with Live(content, console=_console, refresh_per_second=24, transient=True):
+        time.sleep(duration)
 
 
 def header(cfg, stats: dict, cwd: Path | None = None) -> None:
@@ -303,6 +395,7 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     from superton import __version__
 
     cwd = cwd or Path.cwd()
+    repo, branch = git_info(cwd)
     body = Text()
     body.append("SuperTon", style=f"bold {_current.primary}")
     body.append(f"  v{__version__}\n", style=_current.muted)
@@ -320,11 +413,18 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append("theme   ", style=_current.muted)
     body.append(_current.name, style="bold")
     body.append(f"  {_current.label}\n", style=_current.muted)
+    if repo:
+        body.append("repo    ", style=_current.muted)
+        body.append(repo, style="bold")
+        if branch:
+            body.append(f"  ·  {branch}\n", style=_current.muted)
+        else:
+            body.append("\n")
     body.append("cwd     ", style=_current.muted)
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    panel(body, width=min(_console.width - 2, 74))
+    panel(body, width=min(_console.width - 2, 74), anchor=True)
     _console.print()
 
 
@@ -424,8 +524,8 @@ def citations(hits) -> None:
         src = Path(h.drawer.source).name
         _console.print(
             f"  [{_current.muted}]{i}.[/] "
-            f"[{_current.secondary}]{h.drawer.id[:8]}[/] "
-            f"[{_current.muted}]{src}[/]"
+            f"{style_id(h.drawer.id[:8])} "
+            f"{style_path(src)}"
         )
 
 
@@ -506,10 +606,12 @@ def next_steps_card(cfg) -> None:
     body.append("  superton dedup --dry-run              ", style="bold")
     body.append("# find near-duplicates\n", style=_current.muted)
     body.append("\n")
-    body.append(f"palace   {cfg.palace_dir}\n", style=_current.muted)
-    body.append(f"model    Miniton · {cfg.model_profile} · {cfg.base_model}", style=_current.muted)
+    body.append("palace   ", style=_current.muted)
+    body.append(f"{cfg.palace_dir}\n", style=_current.muted)
+    body.append("model    ", style=_current.muted)
+    body.append(f"Miniton · {cfg.model_profile} · {cfg.base_model}", style=_current.muted)
 
-    panel(body, title="ready", width=min(_console.width - 2, 78))
+    panel(body, title="ready", width=min(_console.width - 2, 78), anchor=True)
 
 
 def welcome_tour(cfg, stats: dict) -> None:

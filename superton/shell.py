@@ -36,9 +36,11 @@ COMMAND_HELP = {
 def _prompt() -> str:
     try:
         from prompt_toolkit import prompt
-        from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.completion import Completer, Completion, FuzzyCompleter
         from prompt_toolkit.formatted_text import HTML
         from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.lexers import Lexer
+        from prompt_toolkit.styles import Style
 
         class SlashCompleter(Completer):
             def get_completions(self, document, complete_event):
@@ -68,21 +70,46 @@ def _prompt() -> str:
                             display_meta=help_text,
                         )
 
+        class SuperTonLexer(Lexer):
+            """Color slash commands vs their arguments live as the user types."""
+
+            def lex_document(self, document):
+                def get_line(lineno: int):
+                    line = document.lines[lineno]
+                    if not line.startswith("/"):
+                        return [("class:text", line)]
+                    parts = line.split(" ", 1)
+                    head = parts[0]
+                    tail = " " + parts[1] if len(parts) > 1 else ""
+                    return [("class:cmd", head), ("class:arg", tail)]
+                return get_line
+
+        # Map lexer classes to the active theme.
+        t = ui.theme()
+        pt_style = Style.from_dict({
+            "cmd": f"bold {t.primary}",
+            "arg": t.secondary if t.secondary.startswith("#") else "",
+            "text": "",
+            "placeholder": f"italic {t.muted}",
+        })
+
         # Persistent command history across shell sessions.
         cfg = Config.load()
         history_dir = cfg.home / "history"
         history_dir.mkdir(parents=True, exist_ok=True)
         history = FileHistory(str(history_dir / "shell"))
 
-        glyph = ui.theme().prompt_glyph
+        glyph = t.prompt_glyph
         return prompt(
             f"{glyph} ",
             placeholder=HTML(
                 "<gray>Ask from memory, paste a file path, or type /search &lt;query&gt;</gray>"
             ),
-            completer=SlashCompleter(),
+            completer=FuzzyCompleter(SlashCompleter()),
             complete_while_typing=True,
             history=history,
+            lexer=SuperTonLexer(),
+            style=pt_style,
         )
     except (ImportError, ValueError):
         return input(f"{ui.theme().prompt_glyph} ")
@@ -250,6 +277,10 @@ def _switch_model(profile: str) -> Config:
         base_model=selected["base_model"],
         hf_model=selected["hf_model"],
     )
+    ui.flash(
+        f"[bold {ui.theme().primary}]model[/] → "
+        f"[bold]{profile}[/]  [{ui.theme().muted}]{selected['base_model']}[/]"
+    )
     ui.blank()
     ui.ok(f"model profile → {profile}", selected["base_model"])
     ui.hint("run [bold]superton init --yes[/bold] to pull/rebuild if needed")
@@ -266,6 +297,14 @@ def _switch_theme(name: str) -> Config:
     cfg = Config.load()
     write_settings(cfg.home, theme=name)
     ui.set_theme(name)
+    t = ui.theme()
+    swatch = (
+        f"[bold {t.primary}]SuperTon[/] → "
+        f"[{t.primary}]██[/] [{t.secondary}]██[/] "
+        f"[{t.success}]✓[/] [{t.warning}]![/] [{t.error}]✗[/]  "
+        f"[{t.muted}]{t.label}[/]"
+    )
+    ui.flash(swatch)
     ui.blank()
     ui.ok(f"theme → {name}", ui.theme().label)
     ui.blank()
@@ -286,6 +325,27 @@ def _any_token_match(question: str, hits) -> bool:
         if any(token in haystack for token in tokens):
             return True
     return False
+
+
+def _format_suggestions(raw_hits, limit: int = 2) -> str:
+    """Render a 'did you mean' list from raw retrieval hits.
+
+    Dedupes by source filename so the user sees distinct candidate documents,
+    not three chunks from the same file.
+    """
+    if not raw_hits:
+        return ""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for hit in raw_hits:
+        src = Path(hit.drawer.source).name
+        if src in seen:
+            continue
+        seen.add(src)
+        lines.append(f"  • {src}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
 
 
 def _should_retrieve(question: str) -> bool:
@@ -349,10 +409,20 @@ def _answer(
     # query. This keeps Miniton from confabulating an answer from drawers
     # that were semantically nearby but talk about something unrelated.
     if _looks_memory_specific(question) and not _any_token_match(question, hits):
-        refusal = (
-            "I do not have matching memory for that. Add the resume or document first with "
-            "`/add <path>` or paste the file path directly."
-        )
+        base = "I do not have matching memory for that."
+        suggestions = _format_suggestions(raw_hits)
+        if suggestions:
+            refusal = (
+                f"{base}\n\n"
+                "Did you mean one of these?\n"
+                f"{suggestions}\n\n"
+                "Ask about one of those, or add the source with `/add <path>`."
+            )
+        else:
+            refusal = (
+                f"{base} Add the resume or document first with "
+                "`/add <path>` or paste the file path directly."
+            )
         _print_assistant(refusal)
         return refusal
     context = "\n\n---\n\n".join(
