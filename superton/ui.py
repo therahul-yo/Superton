@@ -393,50 +393,6 @@ def flash(content: Any, duration: float = 0.2) -> None:
         time.sleep(duration)
 
 
-# --- mascot palettes ----------------------------------------------------------
-
-# Each theme gets its own black-hole mascot palette. Keys match blackhole.
-# `mini_mascot`'s kwargs (core / rim / edge / bright / glow).
-MASCOT_PALETTES: dict[str, dict[str, str]] = {
-    "nebula": {
-        "core": "#0A0A12",
-        "rim": "#FFB02E",
-        "edge": "#FFD166",
-        "bright": "#FFF4A8",
-        "glow": "#B024F2",
-    },
-    "mono": {
-        "core": "black",
-        "rim": "grey50",
-        "edge": "grey70",
-        "bright": "bold white",
-        "glow": "grey50",
-    },
-    "solar": {
-        "core": "#3A1505",
-        "rim": "#FF6B1A",
-        "edge": "#FFA040",
-        "bright": "#FFEAB2",
-        "glow": "#FF8842",
-    },
-    "frost": {
-        "core": "#0A1A2A",
-        "rim": "#5FB4FF",
-        "edge": "#7FD1FF",
-        "bright": "#E0F0FF",
-        "glow": "#4A8FFF",
-    },
-}
-
-
-def themed_mini_mascot() -> Text:
-    """Return the black-hole mascot colored for the active theme."""
-    from superton.blackhole import mini_mascot
-
-    palette = MASCOT_PALETTES.get(_current.name, MASCOT_PALETTES["nebula"])
-    return mini_mascot(**palette)
-
-
 def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     """Production-feel launch card shown by the interactive shell and init."""
     from superton import __version__
@@ -471,10 +427,6 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    # The art is ~135 cols wide; disable wrapping so it renders exactly as
-    # authored, even on narrower terminals. Users with narrow windows will
-    # see slight right-side overflow which is acceptable for the mascot.
-    _console.print(themed_mini_mascot(), no_wrap=True, overflow="ignore", crop=False)
     panel(body, width=min(_console.width - 2, 74), anchor=True)
     _console.print()
 

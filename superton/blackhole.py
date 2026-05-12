@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import math
 import time
-from pathlib import Path
 
 from rich.console import Console
 from rich.live import Live
@@ -141,61 +140,6 @@ def mascot_frame(t: float = 0.0) -> Text:
             out.append(text, style=style)
         out.append("\n")
     return out
-
-
-def _load_mascot_art() -> str:
-    """Load the verbatim ASCII art mascot from assets/mascot.txt.
-
-    The file ships alongside the package (see pyproject.toml's force-include
-    list). Blank leading/trailing lines are trimmed so callers only pay for
-    the inked rows.
-    """
-    path = Path(__file__).resolve().parent / "assets" / "mascot.txt"
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    lines = text.splitlines()
-    start = 0
-    while start < len(lines) and not lines[start].strip():
-        start += 1
-    end = len(lines)
-    while end > start and not lines[end - 1].strip():
-        end -= 1
-    return "\n".join(lines[start:end])
-
-
-_MASCOT_ART: str | None = None
-
-
-def mini_mascot(
-    *,
-    core: str = "#0A0A12",
-    rim: str = "#FFB02E",
-    edge: str = "#FFD166",
-    bright: str = "#FFF4A8",
-    glow: str = "#B024F2",
-) -> Text:
-    """Return the themed detailed black-hole mascot.
-
-    We use the verbatim ASCII art supplied in assets/mascot.txt (a
-    density-shaded rendering of the SuperTon brand image, ~135 cols
-    wide) rather than generating block-art on the fly. Callers that
-    used to tune block palettes still pass the full palette; we use
-    the brightest color (``bright``) as the primary ink since the art
-    self-shades through character density.
-
-    `core` / `rim` / `edge` / `glow` are accepted for API compatibility
-    but unused — the kept palette makes each theme's mascot inherit the
-    theme's accent via `bright`.
-    """
-    _ = (core, rim, edge, glow)  # intentionally unused — art is self-shading
-    global _MASCOT_ART
-    if _MASCOT_ART is None:
-        _MASCOT_ART = _load_mascot_art()
-    t = Text()
-    t.append(_MASCOT_ART, style=bright)
-    return t
 
 
 class BlackHole:

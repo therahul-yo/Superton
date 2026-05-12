@@ -56,7 +56,6 @@ packages = ["superton"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "superton/Modelfile" = "superton/Modelfile"
-"superton/assets/mascot.txt" = "superton/assets/mascot.txt"
 
 [tool.hatch.build.targets.sdist]
 include = [
