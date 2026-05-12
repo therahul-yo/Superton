@@ -30,13 +30,20 @@ class ChatGPTImporter:
             return root
         return root / "conversations.json"
 
-    def import_all(self, root: Path) -> tuple[int, int]:
+    def import_all(self, root: Path, *, replace: bool = False) -> tuple[int, int]:
         path = self._export_file(root)
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
         conversations = 0
         drawers = 0
+        known = {row["source"] for row in self.memory.sources(limit=10_000)}
         for convo in data:
             title = convo.get("title") or "conversation"
+            source = f"chatgpt:{title}"
+            if replace:
+                self.memory.forget_source(source)
+            elif source in known:
+                # Already imported — skip to avoid doubling the palace.
+                continue
             mapping = convo.get("mapping") or {}
             added = 0
             for node in mapping.values():
@@ -49,7 +56,7 @@ class ChatGPTImporter:
                     continue
                 self.memory.add(
                     text=f"[{role}] {text}",
-                    source=f"chatgpt:{title}",
+                    source=source,
                     wing="chatgpt",
                     room=title[:80],
                     metadata={"role": role, "conversation": title},
@@ -58,4 +65,5 @@ class ChatGPTImporter:
             if added:
                 conversations += 1
                 drawers += added
+                known.add(source)
         return conversations, drawers

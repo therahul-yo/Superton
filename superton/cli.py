@@ -726,16 +726,22 @@ import_app = typer.Typer(help="Import conversations from other AI tools.")
 app.add_typer(import_app, name="import")
 
 
+_REPLACE_HELP = (
+    "re-import sources that are already in the palace (drops them first)"
+)
+
+
 @import_app.command("claude-code")
 def import_claude_code(
     root: Path | None = typer.Option(None, "--root", help="defaults to ~/.claude/projects"),
+    replace: bool = typer.Option(False, "--replace", help=_REPLACE_HELP),
 ) -> None:
     """Import Claude Code session transcripts."""
     from superton.importers.claude_code import ClaudeCodeImporter
 
     mem = Memory(_cfg())
     with ui.spinner("importing Claude Code sessions"):
-        sessions, drawers = ClaudeCodeImporter(mem).import_all(root)
+        sessions, drawers = ClaudeCodeImporter(mem).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {sessions} Claude Code sessions")
 
@@ -743,13 +749,14 @@ def import_claude_code(
 @import_app.command("chatgpt")
 def import_chatgpt(
     root: Path = typer.Argument(..., exists=True, help="ChatGPT export directory or conversations.json"),
+    replace: bool = typer.Option(False, "--replace", help=_REPLACE_HELP),
 ) -> None:
     """Import ChatGPT data export conversations."""
     from superton.importers.chatgpt import ChatGPTImporter
 
     mem = Memory(_cfg())
     with ui.spinner("importing ChatGPT conversations"):
-        conversations, drawers = ChatGPTImporter(mem).import_all(root)
+        conversations, drawers = ChatGPTImporter(mem).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {conversations} ChatGPT conversations")
 
@@ -757,6 +764,7 @@ def import_chatgpt(
 @import_app.command("cursor")
 def import_cursor(
     root: Path | None = typer.Option(None, "--root", help="defaults to ~/.cursor"),
+    replace: bool = typer.Option(False, "--replace", help=_REPLACE_HELP),
 ) -> None:
     """Import readable Cursor conversation/log files."""
     from superton.importers.generic_threads import GenericThreadImporter
@@ -765,7 +773,7 @@ def import_cursor(
     with ui.spinner("importing Cursor threads"):
         files, drawers = GenericThreadImporter(
             mem, "cursor", Path.home() / ".cursor"
-        ).import_all(root)
+        ).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {files} Cursor files")
 
@@ -773,6 +781,7 @@ def import_cursor(
 @import_app.command("amp")
 def import_amp(
     root: Path | None = typer.Option(None, "--root", help="defaults to ~/.amp"),
+    replace: bool = typer.Option(False, "--replace", help=_REPLACE_HELP),
 ) -> None:
     """Import readable Amp conversation/log files."""
     from superton.importers.generic_threads import GenericThreadImporter
@@ -781,7 +790,7 @@ def import_amp(
     with ui.spinner("importing Amp threads"):
         files, drawers = GenericThreadImporter(
             mem, "amp", Path.home() / ".amp"
-        ).import_all(root)
+        ).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {files} Amp files")
 

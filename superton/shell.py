@@ -33,7 +33,36 @@ COMMAND_HELP = {
 }
 
 
-def _prompt() -> str:
+class _Status:
+    """Live state shown in the prompt's bottom toolbar.
+
+    Refreshed after every REPL turn. Cheap to compute — just reads the
+    cached config and a small SQLite count.
+    """
+
+    def __init__(self, cfg: Config, mem: Memory) -> None:
+        self.cfg = cfg
+        self.mem = mem
+
+    def refresh(self, cfg: Config) -> None:
+        self.cfg = cfg
+
+    def toolbar_html(self) -> str:
+        try:
+            n = self.mem.stats()["drawers"]
+        except Exception:
+            n = 0
+        t = ui.theme()
+        # prompt_toolkit HTML — keep it dim and one-line.
+        return (
+            f"<bottom-toolbar.text>"
+            f"palace: {n} drawers · model: {self.cfg.model_profile} · "
+            f"theme: {t.name}  ·  /help · /quit"
+            f"</bottom-toolbar.text>"
+        )
+
+
+def _prompt(status: "_Status | None" = None) -> str:
     try:
         from prompt_toolkit import prompt
         from prompt_toolkit.completion import Completer, Completion
@@ -84,15 +113,18 @@ def _prompt() -> str:
                     return [("class:cmd", head), ("class:arg", tail)]
                 return get_line
 
-        # Theme-aware styles for the lexer classes only. No change to the
-        # completion-menu behavior — we keep prompt_toolkit's defaults, which
-        # are known to work for this app (the slash menu used to open fine
-        # before we tinkered).
+        # Theme-aware styles for the prompt glyph, lexer classes, and the
+        # bottom status bar. The status bar holds the live palace summary so
+        # the user always sees where they are — same role as Claude Code's
+        # persistent footer.
         t = ui.theme()
         pt_style = Style.from_dict({
             "cmd": f"bold {t.primary}",
             "arg": t.secondary if t.secondary.startswith("#") else "",
             "text": "",
+            "glyph": f"bold {t.primary}" if t.primary.startswith("#") or t.primary.startswith("bold") else t.primary,
+            "bottom-toolbar": f"{t.muted} noreverse",
+            "bottom-toolbar.text": f"{t.muted}",
         })
 
         # Persistent command history across shell sessions.
@@ -101,20 +133,22 @@ def _prompt() -> str:
         history_dir.mkdir(parents=True, exist_ok=True)
         history = FileHistory(str(history_dir / "shell"))
 
-        glyph = t.prompt_glyph
+        def _bottom_toolbar():
+            if status is None:
+                return None
+            return HTML(status.toolbar_html())
+
         return prompt(
-            f"{glyph} ",
-            placeholder=HTML(
-                "<gray>Ask from memory, paste a file path, or type /search &lt;query&gt;</gray>"
-            ),
+            HTML("<glyph>&gt;</glyph> "),
             completer=SlashCompleter(),
             complete_while_typing=True,
             history=history,
             lexer=SuperTonLexer(),
             style=pt_style,
+            bottom_toolbar=_bottom_toolbar if status is not None else None,
         )
     except (ImportError, ValueError):
-        return input(f"{ui.theme().prompt_glyph} ")
+        return input("> ")
 
 
 def _print_assistant(answer: str, hits=None) -> None:
@@ -137,13 +171,11 @@ def _run_with_spinner(label: str, work):
 def _print_intro(cfg: Config, mem: Memory) -> None:
     s = mem.stats()
     ui.header(cfg, s)
-    hints = [
-        "paste a file path to ingest it · ask a question grounded in your palace",
-        '/search <query>   /sources   /stats   /theme   /quit',
-    ]
+    # The live bottom toolbar carries the routine hints (/help, /quit, palace
+    # state). Here we only surface the empty-palace nudge, since it's the one
+    # hint that demands action before the user can do anything useful.
     if s["drawers"] == 0:
-        hints.append("⚠  no drawers yet — add a file with /add <path>")
-    ui.footer_hints(hints)
+        ui.footer_hints(["⚠  no drawers yet — add a file with /add <path>"])
     ui.rule()
 
 
@@ -217,11 +249,30 @@ def _relevant_hits(question: str, hits):
 
 
 def _print_search_hits(hits) -> None:
+    """Render hits as compact stacked cards.
+
+    Each hit gets a one-line header (cite + score) plus a single-line
+    preview, separated by a dim rule. This mirrors Claude Code's tool-
+    result presentation: clearly delineated but visually quiet.
+    """
+    from rich.text import Text
+
     ui.blank()
-    for hit in hits:
+    t = ui.theme()
+    for idx, hit in enumerate(hits):
         preview = " ".join(hit.drawer.text.split())[:220]
-        ui.console().print(ui.cite(hit.drawer.id, hit.drawer.source))
-        ui.console().print(f"  {preview}")
+        score = float(getattr(hit, "score", 0.0) or 0.0)
+        score_col = ui.score_color(score)
+        header = Text()
+        header.append(f"[{idx + 1}]  ", style=t.muted)
+        header.append(hit.drawer.id[:8], style=t.secondary)
+        header.append("  ", style=t.muted)
+        header.append(Path(hit.drawer.source).name, style=t.muted)
+        header.append(f"  {score:0.2f}", style=score_col)
+        ui.console().print(header)
+        ui.console().print(f"  [{t.muted}]{preview}[/]")
+        if idx != len(hits) - 1:
+            ui.console().print(f"  [{t.rule}]·[/]")
     ui.blank()
 
 
@@ -513,12 +564,13 @@ def run() -> None:
     ui.set_theme(cfg.theme)
     mem = Memory(cfg)
     model = Model(cfg)
+    status = _Status(cfg, mem)
     history: list[tuple[str, str]] = []
     try:
         _print_intro(cfg, mem)
         while True:
             try:
-                text = _prompt().strip()
+                text = _prompt(status).strip()
             except (EOFError, KeyboardInterrupt):
                 ui.blank()
                 break
@@ -546,12 +598,14 @@ def run() -> None:
                 cfg = _switch_model(text.removeprefix("/model ").strip())
                 model.close()
                 model = Model(cfg)
+                status.refresh(cfg)
                 continue
             if text == "/theme":
                 _print_themes(cfg)
                 continue
             if text.startswith("/theme "):
                 cfg = _switch_theme(text.removeprefix("/theme ").strip())
+                status.refresh(cfg)
                 continue
             if text == "/doctor":
                 s = mem.stats()
