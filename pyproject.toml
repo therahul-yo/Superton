@@ -5,14 +5,13 @@ description = "A tiny local LLM with infinite memory. Your second brain that nev
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Rahul" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["llm", "local", "memory", "rag", "ollama", "knowledge-base", "second-brain"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -70,7 +69,7 @@ include = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

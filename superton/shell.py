@@ -62,7 +62,7 @@ class _Status:
         )
 
 
-def _prompt(status: "_Status | None" = None) -> str:
+def _prompt(status: _Status | None = None) -> str:
     try:
         from prompt_toolkit import prompt
         from prompt_toolkit.completion import Completer, Completion
