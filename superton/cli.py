@@ -26,7 +26,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from superton import __version__
-from superton.blackhole import play_boot, static_frame
+from superton.blackhole import static_frame
 from superton.config import MODEL_PROFILES, Config, write_settings
 from superton.ingest import chunk_text, read_file, walk
 from superton.memory import Memory
@@ -182,14 +182,10 @@ def _root(
 
 @app.command()
 def init(
-    skip_animation: bool = typer.Option(False, "--no-animation"),
     skip_model: bool = typer.Option(False, "--no-model", help="skip ollama model build"),
     yes: bool = typer.Option(False, "--yes", "-y", help="accept setup prompts"),
 ) -> None:
     """Initialize the palace and build Miniton."""
-    if not skip_animation:
-        play_boot(console, duration=1.4)
-
     cfg = _cfg()
     cfg.home.mkdir(parents=True, exist_ok=True)
     cfg.palace_dir.mkdir(parents=True, exist_ok=True)
