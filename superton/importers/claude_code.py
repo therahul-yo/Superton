@@ -7,10 +7,10 @@ emits one drawer per user/assistant turn into the palace.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
-from superton.memory import Drawer, Memory
+from superton.memory import Memory
 
 
 def _default_root() -> Path:

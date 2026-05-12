@@ -6,8 +6,8 @@ that means small, well-tested PRs and a low barrier to your first contribution.
 ## Setup
 
 ```bash
-git clone https://github.com/rahul/superton
-cd superton
+git clone https://github.com/therahul-yo/Superton.git
+cd Superton
 uv sync --extra dev
 uv run pytest
 ```

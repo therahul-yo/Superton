@@ -19,23 +19,38 @@ def _home() -> Path:
 @dataclass(frozen=True)
 class Config:
     home: Path
-    model: str = "mini-ton"
-    base_model: str = "qwen2.5:0.5b"
+    model: str = "miniton"
+    base_model: str = "qwen2.5:1.5b-instruct"
+    model_backend: str = "auto"
+    hf_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
     embed_model: str = "nomic-embed-text"
     ollama_url: str = "http://127.0.0.1:11434"
+    memory_backend: str = "hybrid"
+    semantic_collection: str = "superton_drawers"
     offline: bool = True
 
     @classmethod
     def load(cls) -> Config:
         return cls(
             home=_home(),
-            model=os.environ.get("SUPERTON_MODEL", "mini-ton"),
+            model=os.environ.get("SUPERTON_MODEL", "miniton"),
+            base_model=os.environ.get("SUPERTON_BASE_MODEL", "qwen2.5:1.5b-instruct"),
+            model_backend=os.environ.get("SUPERTON_MODEL_BACKEND", "auto").lower(),
+            hf_model=os.environ.get("SUPERTON_HF_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"),
             ollama_url=os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434"),
+            memory_backend=os.environ.get("SUPERTON_MEMORY_BACKEND", "hybrid").lower(),
+            semantic_collection=os.environ.get(
+                "SUPERTON_SEMANTIC_COLLECTION", "superton_drawers"
+            ),
         )
 
     @property
     def palace_dir(self) -> Path:
         return self.home / "palace"
+
+    @property
+    def semantic_dir(self) -> Path:
+        return self.palace_dir / "semantic"
 
     @property
     def config_file(self) -> Path:

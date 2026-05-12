@@ -11,74 +11,27 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
-from typing import Iterator
 
-from rich.console import Console, ConsoleOptions, RenderResult
+from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
 # Visual identity — warm disk, violet underglow, void core.
-DISK_COLORS = ["#FFD93D", "#FFB347", "#FF6B35", "#E94E1B"]
-UNDERGLOW = "#A23BFF"
+DISK_COLORS = ["#FFF7B8", "#FFD166", "#FF8A2A", "#F0471F"]
+UNDERGLOW = "#B024F2"
 CORE = "#0A0A0F"
-SPECULAR = "#3A3A4F"
+SPECULAR = "#5B2B73"
 
-WIDTH = 52
-HEIGHT = 16
+WIDTH = 62
+HEIGHT = 22
 CENTER_X = WIDTH / 2
 CENTER_Y = HEIGHT / 2
 
-# Disk oval — wider than tall (tilt forward).
-DISK_RX = 22.0
-DISK_RY = 4.5
-DISK_THICKNESS = 1.4
-
-# Sphere — circle in screen space.
-SPHERE_R = 4.2
-SPHERE_R2 = SPHERE_R * SPHERE_R
-
-
-@dataclass
-class Particle:
-    """A point traveling along the disk's oval."""
-
-    phase: float  # 0..1 around the oval
-    intensity: float  # 0..1 brightness
-
-
-def _disk_particles(count: int = 64) -> list[Particle]:
-    return [
-        Particle(phase=i / count, intensity=0.5 + 0.5 * math.sin(i * 0.7))
-        for i in range(count)
-    ]
-
-
-def _in_sphere(x: float, y: float) -> bool:
-    dx = x - CENTER_X
-    dy = (y - CENTER_Y) * 2.2  # terminal cells are ~2x taller than wide
-    return dx * dx + dy * dy <= SPHERE_R2
-
-
-def _disk_position(phase: float) -> tuple[float, float, bool]:
-    """Return (x, y, in_front) for a particle at oval phase."""
-    angle = phase * 2 * math.pi
-    x = CENTER_X + DISK_RX * math.cos(angle)
-    y = CENTER_Y + DISK_RY * math.sin(angle)
-    in_front = math.sin(angle) > 0
-    return x, y, in_front
-
-
-def _pick_disk_char(intensity: float) -> str:
-    if intensity > 0.85:
-        return "█"
-    if intensity > 0.65:
-        return "▓"
-    if intensity > 0.4:
-        return "▒"
-    if intensity > 0.2:
-        return "░"
-    return "·"
+DISK_RX = 25.5
+DISK_RY = 4.7
+HORIZON_R = 5.8
+SAMPLES = ((0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75))
+GLYPHS = "  ·░▒▓█"
 
 
 def _pick_disk_color(intensity: float) -> str:
@@ -86,67 +39,105 @@ def _pick_disk_color(intensity: float) -> str:
     return DISK_COLORS[idx]
 
 
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
+
+
+def _glyph(value: float) -> str:
+    return GLYPHS[int(_clamp(value) * (len(GLYPHS) - 1))]
+
+
+def _cell_sample(px: float, py: float, t: float, speed: float, pulse: float) -> tuple[float, str, int]:
+    """Return numeric brightness, color, and layer for one sub-cell sample."""
+    dx = px - CENTER_X
+    dy = py - CENTER_Y
+    rot = t * speed
+    angle = math.atan2(dy / DISK_RY, dx / DISK_RX)
+    ellipse = (dx / DISK_RX) ** 2 + (dy / DISK_RY) ** 2
+
+    # Back accretion ring.
+    ring = 1.0 - abs(ellipse - 1.0) / 0.18
+    if ring > 0:
+        swirl = 0.55 + 0.45 * math.sin(angle * 7.0 - rot * math.tau * 2.2)
+        doppler = 0.65 + 0.35 * math.cos(angle + math.pi * 0.88)
+        brightness = _clamp(ring * (0.45 + 0.5 * swirl) * doppler * pulse)
+        color = _pick_disk_color(brightness)
+        layer = 1
+    else:
+        brightness = 0.0
+        color = "default"
+        layer = 0
+
+    # Bright front lens, thinner than a full terminal row.
+    front = 1.0 - (abs(dy - 1.25) / 0.62 + (abs(dx) / (DISK_RX + 1.5)) ** 2.4)
+    if front > 0:
+        front_wave = 0.82 + 0.18 * math.sin(dx * 0.45 - rot * math.tau * 3.5)
+        front_brightness = _clamp(front * front_wave * 1.25)
+        if front_brightness > brightness or layer < 3:
+            brightness = front_brightness
+            color = "#FFF4A8" if front_brightness > 0.62 else "#FFB02E"
+            layer = 3
+
+    # Event horizon. Terminal cells are tall, so scale y for a round shape.
+    horizon = (dx / HORIZON_R) ** 2 + ((dy + 0.95) / (HORIZON_R * 0.58)) ** 2
+    if horizon <= 1.0 and py < CENTER_Y + 1.3:
+        rim = _clamp((1.0 - horizon) * 1.6)
+        left_glow = _clamp((-dx - 1.0) / HORIZON_R) * 0.55
+        brightness = max(0.18, left_glow * rim)
+        color = SPECULAR if left_glow > 0.12 else "#000000"
+        layer = 4
+
+    # Underglow appears below the disk and breathes over time.
+    glow = 1.0 - ((dx / 8.2) ** 2 + ((dy - 5.0) / 3.2) ** 2)
+    glow *= 0.55 + 0.45 * math.sin(t * 1.8)
+    if glow > 0.08 and layer < 2:
+        brightness = max(brightness, _clamp(glow * 0.82))
+        color = UNDERGLOW
+        layer = 2
+
+    return brightness, color, layer
+
+
 def render_frame(t: float, *, speed: float = 1.0, pulse: float = 1.0) -> Text:
     """Render one frame at time t (seconds). Returns rich Text."""
-    grid: list[list[tuple[str, str]]] = [[(" ", "default")] * WIDTH for _ in range(HEIGHT)]
-
-    # Pass 1 — disk particles BEHIND the sphere.
-    particles = _disk_particles(72)
-    rotation = (t * 0.4 * speed) % 1.0
-
-    for p in particles:
-        phase = (p.phase + rotation) % 1.0
-        x, y, in_front = _disk_position(phase)
-        if in_front:
-            continue
-        ix, iy = int(round(x)), int(round(y))
-        if 0 <= ix < WIDTH and 0 <= iy < HEIGHT:
-            char = _pick_disk_char(p.intensity * pulse)
-            color = _pick_disk_color(p.intensity * pulse)
-            grid[iy][ix] = (char, color)
-
-    # Pass 2 — sphere body (the void). Overwrites anything underneath.
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            if _in_sphere(x, y):
-                # tiny specular highlight at upper-left
-                dx, dy = x - CENTER_X, y - CENTER_Y
-                if dx < -1.5 and dy < -0.5 and (dx * dx + dy * dy * 4) < (SPHERE_R * 0.7) ** 2:
-                    grid[y][x] = ("·", SPECULAR)
-                else:
-                    grid[y][x] = (" ", CORE)
-
-    # Pass 3 — disk particles IN FRONT of the sphere.
-    for p in particles:
-        phase = (p.phase + rotation) % 1.0
-        x, y, in_front = _disk_position(phase)
-        if not in_front:
-            continue
-        ix, iy = int(round(x)), int(round(y))
-        if 0 <= ix < WIDTH and 0 <= iy < HEIGHT:
-            char = _pick_disk_char(p.intensity * pulse)
-            color = _pick_disk_color(p.intensity * pulse)
-            grid[iy][ix] = (char, color)
-
-    # Pass 4 — violet underglow on rows just below the sphere.
-    glow_strength = 0.5 + 0.5 * math.sin(t * 1.6)
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            if grid[y][x][0] != " ":
-                continue
-            dx = x - CENTER_X
-            dy = y - CENTER_Y
-            if dy > 0 and dy < SPHERE_R + 2 and abs(dx) < SPHERE_R + 1:
-                if glow_strength > 0.7:
-                    grid[y][x] = ("·", UNDERGLOW)
-
     out = Text()
-    for row in grid:
-        for char, color in row:
-            if color == "default" or color == CORE:
+    for y in range(HEIGHT):
+        for x in range(WIDTH):
+            total = 0.0
+            colors: dict[str, float] = {}
+            for sx, sy in SAMPLES:
+                brightness, color, _layer = _cell_sample(x + sx, y + sy, t, speed, pulse)
+                total += brightness
+                colors[color] = colors.get(color, 0.0) + brightness
+            value = total / len(SAMPLES)
+            color = max(colors, key=colors.get) if colors else "default"
+            if color == "#000000" and value > 0:
+                value = max(value, 0.7)
+            char = _glyph(value)
+            if color == "default" or char == " ":
                 out.append(char)
             else:
                 out.append(char, style=color)
+        out.append("\n")
+    return out
+
+
+def mascot_frame(t: float = 0.0) -> Text:
+    """Small terminal-native fallback mark for non-shell contexts."""
+    out = Text()
+    segments = [
+        [("        ▄▄████▄▄        ", "#FFB02E")],
+        [("     ▄██", "#FFF4A8"), ("▀      ▀", "#FFB02E"), ("██▄     ", "#FF8A2A")],
+        [("   ▄█▀ ", "#FFF4A8"), ("  ▄▄▄▄  ", "#07050A"), (" ▀█▄   ", "#F0471F")],
+        [("▄▄█▀", "#FFD166"), ("              ", "#07050A"), ("▀█▄▄", "#FF8A2A")],
+        [("████", "#FF8A2A"), ("████████████", "#FFF4A8"), ("████", "#FFD166")],
+        [(" ▀██▄", "#C56A1B"), ("  ▀██████▀  ", "#8A3F10"), ("▄██▀ ", "#F0471F")],
+        [("    ▀██▄", "#5B2B73"), ("      ", "#09050D"), ("▄██▀    ", "#7837E8")],
+        [("       ▀", "#5B2B73"), ("▓▓▓▓▓▓", "#B024F2"), ("▀       ", "#E0378A")],
+    ]
+    for line in segments:
+        for text, style in line:
+            out.append(text, style=style)
         out.append("\n")
     return out
 
@@ -160,7 +151,7 @@ class BlackHole:
             bh.set_state("retrieving")
     """
 
-    def __init__(self, console: Console, fps: int = 15):
+    def __init__(self, console: Console, fps: int = 24):
         self.console = console
         self.fps = fps
         self._start = time.time()
@@ -178,7 +169,7 @@ class BlackHole:
     def set_state(self, state: str) -> None:
         self._state = state
 
-    def __enter__(self) -> "BlackHole":
+    def __enter__(self) -> BlackHole:
         self._live = Live(
             self._frame(),
             console=self.console,
@@ -199,7 +190,7 @@ class BlackHole:
 
 def play_boot(console: Console, duration: float = 1.6) -> None:
     """Play the boot animation for `duration` seconds, then exit."""
-    fps = 18
+    fps = 24
     end = time.time() + duration
     with Live(console=console, refresh_per_second=fps, transient=False) as live:
         while time.time() < end:

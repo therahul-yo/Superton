@@ -1,15 +1,16 @@
 """SuperTon CLI — entry point.
 
 Commands:
-  superton init                set up palace + check ollama + build mini-ton
+  superton init                set up palace + check ollama + build Miniton
   superton add <path>          ingest file or directory
-  superton ask "..."           query mini-ton with palace context
+  superton ask "..."           query Miniton with palace context
   superton list                show recent drawers
-  superton search "..."        lexical search (semantic in Phase 1)
+  superton search "..."        semantic search with SQLite fallback
   superton forget <id>         remove a drawer
   superton stats               palace statistics
+  superton close               stop SuperTon model runners
   superton import <source>     pull conversations from other AI tools
-  superton tune                edit Modelfile and rebuild mini-ton
+  superton tune                edit Modelfile and rebuild Miniton
 """
 
 from __future__ import annotations
@@ -17,9 +18,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -31,7 +30,7 @@ from superton.blackhole import play_boot, static_frame
 from superton.config import Config
 from superton.ingest import chunk_text, read_file, walk
 from superton.memory import Memory
-from superton.model import Model, OllamaError
+from superton.model import Model, ModelError, OllamaError
 
 app = typer.Typer(
     name="superton",
@@ -65,6 +64,57 @@ def _print_header() -> None:
     console.print()
 
 
+def _launch_shell() -> None:
+    from superton.shell import run
+
+    run()
+
+
+def _project_modelfile() -> Path | None:
+    package_modelfile = Path(__file__).resolve().parent / "Modelfile"
+    if package_modelfile.exists():
+        return package_modelfile
+    modelfile = Path(__file__).resolve().parent.parent / "Modelfile"
+    if modelfile.exists():
+        return modelfile
+    modelfile = Path.cwd() / "Modelfile"
+    return modelfile if modelfile.exists() else None
+
+
+def _render_modelfile(template: Path, cfg: Config) -> Path:
+    """Render a runtime Modelfile with the configured hidden base model."""
+    text = template.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    replaced = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith("FROM "):
+            lines[i] = f"FROM {cfg.base_model}"
+            replaced = True
+            break
+    if not replaced:
+        lines.insert(0, f"FROM {cfg.base_model}")
+
+    build_dir = cfg.home / "build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    rendered = build_dir / "Modelfile.miniton"
+    rendered.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return rendered
+
+
+def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
+    if yes:
+        return True
+    console.print()
+    console.print(Panel(
+        f"[bold]{model_name}[/bold]\n\n"
+        f"{purpose}\n\n"
+        "This downloads model weights to your local Ollama store.",
+        title="Model Download",
+        border_style="yellow",
+    ))
+    return typer.confirm("Pull this model now?", default=True)
+
+
 @app.callback(invoke_without_command=True)
 def _root(
     ctx: typer.Context,
@@ -74,17 +124,17 @@ def _root(
         console.print(f"superton {__version__}")
         raise typer.Exit()
     if ctx.invoked_subcommand is None:
-        _print_header()
-        console.print("  try: [bold]superton init[/bold] · [bold]superton add <file>[/bold] · "
-                      "[bold]superton ask \"...\"[/bold]\n")
+        _launch_shell()
+        raise typer.Exit()
 
 
 @app.command()
 def init(
     skip_animation: bool = typer.Option(False, "--no-animation"),
     skip_model: bool = typer.Option(False, "--no-model", help="skip ollama model build"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="accept setup prompts"),
 ) -> None:
-    """Initialize the palace and build mini-ton."""
+    """Initialize the palace and build Miniton."""
     if not skip_animation:
         play_boot(console, duration=1.4)
 
@@ -103,30 +153,65 @@ def init(
     if shutil.which("ollama") is None:
         console.print("[yellow]![/yellow] ollama not found in PATH")
         console.print("  install: [link]https://ollama.com/download[/link]")
+        if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"):
+            console.print("[green]✓[/green] Hugging Face fallback is configured via token")
+        else:
+            console.print(
+                "  fallback: set [bold]HF_TOKEN[/bold] and "
+                "[bold]SUPERTON_MODEL_BACKEND=huggingface[/bold]"
+            )
         return
 
     model = Model(cfg)
-    if not model.ping():
-        console.print("[yellow]![/yellow] ollama daemon not responding — start it with: "
-                      "[bold]ollama serve[/bold]")
-        return
+    if not model.ollama_ready():
+        console.print("[dim]starting ollama service...[/dim]")
+        if not model.start_ollama():
+            console.print("[yellow]![/yellow] could not start ollama automatically")
+            console.print("  run manually: [bold]ollama serve[/bold]")
+            console.print(
+                "  or use Hugging Face: [bold]SUPERTON_MODEL_BACKEND=huggingface HF_TOKEN=...[/bold]"
+            )
+            model.close()
+            return
 
     if not model.has_model(cfg.base_model):
-        console.print(f"[dim]pulling {cfg.base_model}...[/dim]")
+        if not _confirm_pull(
+            cfg.base_model,
+            "Required to build Miniton, the local answer model.",
+            yes=yes,
+        ):
+            console.print("[yellow]![/yellow] skipped model pull")
+            model.close()
+            return
+        console.print(f"[dim]pulling Miniton base model ({cfg.base_model})...[/dim]")
         subprocess.run(["ollama", "pull", cfg.base_model], check=False)
+        if not model.has_model(cfg.base_model):
+            console.print(f"[red]error:[/red] failed to pull base model [bold]{cfg.base_model}[/bold]")
+            model.close()
+            return
     if not model.has_model(cfg.embed_model):
+        if not _confirm_pull(
+            cfg.embed_model,
+            "Required for local embeddings and better semantic memory.",
+            yes=yes,
+        ):
+            console.print("[yellow]![/yellow] skipped embedding model pull")
+            model.close()
+            return
         console.print(f"[dim]pulling {cfg.embed_model}...[/dim]")
         subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
 
-    modelfile = Path(__file__).resolve().parent.parent / "Modelfile"
-    if not modelfile.exists():
-        modelfile = Path.cwd() / "Modelfile"
-    if modelfile.exists():
+    modelfile = _project_modelfile()
+    if modelfile is not None:
+        rendered = _render_modelfile(modelfile, cfg)
         console.print(f"[dim]building {cfg.model} from {modelfile.name}...[/dim]")
-        subprocess.run(["ollama", "create", cfg.model, "-f", str(modelfile)], check=False)
-        console.print(f"[green]✓[/green] mini-ton ready (as [bold]{cfg.model}[/bold])")
+        if model.build(rendered):
+            console.print(f"[green]✓[/green] Miniton ready (as [bold]{cfg.model}[/bold])")
+        else:
+            console.print("[red]error:[/red] failed to build Miniton")
     else:
         console.print("[yellow]![/yellow] Modelfile not found — using base model directly")
+    model.close()
 
 
 @app.command()
@@ -169,13 +254,20 @@ def ask(
     k: int = typer.Option(5, "--top-k", "-k"),
     why: bool = typer.Option(False, "--why", help="show retrieval trace"),
 ) -> None:
-    """Ask mini-ton a question. Answer is grounded in palace drawers."""
+    """Ask Miniton a question. Answer is grounded in palace drawers."""
     cfg = _cfg()
     mem = Memory(cfg)
-    hits = mem.search(question, limit=k)
+    raw_hits = mem.search(question, limit=max(k, 8))
+    from superton.shell import _looks_memory_specific, _relevant_hits
 
-    if not hits:
-        console.print(f"  {PROMPT_GLYPH} [dim]not yet in the palace.[/dim]")
+    hits = _relevant_hits(question, raw_hits)[:k]
+    if raw_hits and not hits and not _looks_memory_specific(question):
+        hits = raw_hits[:k]
+    if _looks_memory_specific(question) and not hits:
+        console.print(
+            "  [yellow]![/yellow] no matching memory found. Add the source first with "
+            "[bold]superton add <path>[/bold]."
+        )
         mem.close()
         return
 
@@ -187,24 +279,32 @@ def ask(
         for h in hits:
             preview = h.drawer.text.replace("\n", " ")[:80]
             table.add_row(h.drawer.id[:8], Path(h.drawer.source).name, preview)
+        if not hits:
+            table.add_row("-", "-", "no memory drawers matched")
         console.print(table)
 
     context = "\n\n---\n\n".join(
         f"[drawer:{h.drawer.id[:8]} · {Path(h.drawer.source).name}]\n{h.drawer.text}"
         for h in hits
     )
-    prompt = (
-        f"Context drawers from the palace:\n\n{context}\n\n"
-        f"Question: {question}\n\nAnswer concisely. Cite drawer IDs inline."
-    )
+    if hits:
+        prompt = (
+            f"Context drawers from the palace:\n\n{context}\n\n"
+            f"Question: {question}\n\nAnswer concisely. Cite drawer IDs inline."
+        )
+    else:
+        prompt = (
+            "No palace drawers matched this question.\n\n"
+            f"Question: {question}\n\nAnswer naturally and concisely."
+        )
 
     model = Model(cfg)
-    if not model.ping():
-        console.print("[yellow]![/yellow] ollama not running — falling back to raw retrieval")
-        for h in hits:
-            console.print(Panel(h.drawer.text[:400],
-                                title=f"[cyan]drawer:{h.drawer.id[:8]}[/cyan]",
-                                border_style="dim"))
+    if model.backend() is None:
+        model.start_ollama(timeout=5.0)
+    if model.backend() is None:
+        console.print("[yellow]![/yellow] no model backend available")
+        console.print("  run: [bold]superton init[/bold]")
+        model.close()
         mem.close()
         return
 
@@ -213,7 +313,7 @@ def ask(
         for tok in model.generate(prompt):
             console.print(tok, end="")
         console.print()
-    except OllamaError as e:
+    except (OllamaError, ModelError) as e:
         err_console.print(f"\n[red]error:[/red] {e}")
     finally:
         model.close()
@@ -241,7 +341,7 @@ def list_drawers(
 
 @app.command()
 def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
-    """Lexical search across drawers."""
+    """Semantic search across drawers with SQLite fallback."""
     mem = Memory(_cfg())
     hits = mem.search(query, limit=limit)
     if not hits:
@@ -249,12 +349,9 @@ def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
         mem.close()
         return
     for h in hits:
-        console.print(Panel(
-            h.drawer.text[:400],
-            title=f"[cyan]drawer:{h.drawer.id[:8]}[/cyan] · "
-                  f"[dim]{Path(h.drawer.source).name}[/dim]",
-            border_style="dim",
-        ))
+        console.print(f"[cyan]drawer:{h.drawer.id[:8]}[/cyan] · [dim]{Path(h.drawer.source).name}[/dim]")
+        console.print(h.drawer.text[:400])
+        console.print("[dim]" + "─" * 60 + "[/dim]")
     mem.close()
 
 
@@ -288,8 +385,110 @@ def stats() -> None:
     table.add_row("drawers", str(s["drawers"]))
     table.add_row("wings", str(s["wings"]))
     table.add_row("rooms", str(s["rooms"]))
+    table.add_row("backend", str(s["backend"]))
     table.add_row("disk", f"{s['bytes'] / 1024:.1f} KB")
-    console.print(Panel(table, title="palace", border_style="dim"))
+    if s.get("semantic_error"):
+        table.add_row("semantic", f"fallback active: {s['semantic_error']}")
+    console.print("[bold]palace[/bold]")
+    console.print(table)
+
+
+@app.command()
+def doctor() -> None:
+    """Check local runtime, memory, and model setup."""
+    cfg = _cfg()
+    mem = Memory(cfg)
+    s = mem.stats()
+    mem.close()
+
+    table = Table(show_header=True, header_style="dim")
+    table.add_column("check")
+    table.add_column("status")
+    table.add_column("detail")
+
+    def row(name: str, ok: bool, detail: str) -> None:
+        status = "[green]ok[/green]" if ok else "[yellow]warn[/yellow]"
+        table.add_row(name, status, detail)
+
+    row("home", cfg.home.exists(), str(cfg.home))
+    row("palace", cfg.palace_dir.exists(), str(cfg.palace_dir))
+    row("drawers", True, str(s["drawers"]))
+    row("memory backend", True, cfg.memory_backend)
+    row("model backend", True, cfg.model_backend)
+
+    try:
+        import mempalace
+
+        row("mempalace", True, getattr(mempalace, "__version__", "installed"))
+    except Exception as e:
+        row("mempalace", False, str(e))
+
+    row("ollama binary", shutil.which("ollama") is not None, shutil.which("ollama") or "missing")
+    model = Model(cfg)
+    ollama_ok = model.ollama_ready()
+    row("ollama daemon", ollama_ok, cfg.ollama_url)
+    if ollama_ok:
+        row("Miniton model", model.has_model(cfg.model), cfg.model)
+        row("base model", model.has_model(cfg.base_model), cfg.base_model)
+        row("embed model", model.has_model(cfg.embed_model), cfg.embed_model)
+    row("hugging face", model.hf_ready(), cfg.hf_model if model.hf_ready() else "HF_TOKEN missing")
+    model.close()
+
+    if s.get("semantic_error"):
+        row("semantic index", False, str(s["semantic_error"]))
+    else:
+        row("semantic index", bool(s["semantic_enabled"]), cfg.semantic_collection)
+
+    console.print("[bold]doctor[/bold]")
+    console.print(table)
+
+
+@app.command()
+def reindex() -> None:
+    """Rebuild semantic index from the SQLite drawer store."""
+    mem = Memory(_cfg())
+    total = mem.reindex_semantic()
+    s = mem.stats()
+    mem.close()
+    if s.get("semantic_error"):
+        console.print(f"[yellow]![/yellow] semantic reindex incomplete: {s['semantic_error']}")
+        return
+    console.print(f"[green]✓[/green] reindexed [bold]{total}[/bold] drawers")
+
+
+@app.command("close")
+def close_models(
+    all_models: bool = typer.Option(
+        False,
+        "--all",
+        help="also stop SuperTon base and embedding models",
+    ),
+    force_daemon: bool = typer.Option(
+        False,
+        "--force-daemon",
+        help="also kill the ollama daemon process after stopping models",
+    ),
+) -> None:
+    """Stop running SuperTon model runners."""
+    cfg = _cfg()
+    if shutil.which("ollama") is None:
+        console.print("[yellow]![/yellow] ollama not found")
+        return
+
+    names = [cfg.model]
+    if all_models:
+        names.extend([cfg.base_model, cfg.embed_model])
+
+    model = Model(cfg)
+    for name in dict.fromkeys(names):
+        ok = model.stop(name)
+        status = "[green]✓[/green]" if ok else "[dim]-[/dim]"
+        console.print(f"{status} stopped {name}")
+    model.close()
+
+    if force_daemon:
+        console.print("[yellow]![/yellow] force-stopping ollama daemon")
+        subprocess.run(["pkill", "-f", "ollama serve"], check=False)
 
 
 import_app = typer.Typer(help="Import conversations from other AI tools.")
@@ -298,8 +497,7 @@ app.add_typer(import_app, name="import")
 
 @import_app.command("claude-code")
 def import_claude_code(
-    root: Optional[Path] = typer.Option(None, "--root",
-                                        help="defaults to ~/.claude/projects"),
+    root: Path | None = typer.Option(None, "--root", help="defaults to ~/.claude/projects"),
 ) -> None:
     """Import Claude Code session transcripts."""
     from superton.importers.claude_code import ClaudeCodeImporter
@@ -313,19 +511,64 @@ def import_claude_code(
     )
 
 
+@import_app.command("chatgpt")
+def import_chatgpt(
+    root: Path = typer.Argument(..., exists=True, help="ChatGPT export directory or conversations.json"),
+) -> None:
+    """Import ChatGPT data export conversations."""
+    from superton.importers.chatgpt import ChatGPTImporter
+
+    mem = Memory(_cfg())
+    conversations, drawers = ChatGPTImporter(mem).import_all(root)
+    mem.close()
+    console.print(
+        f"[green]✓[/green] imported [bold]{drawers}[/bold] drawers from "
+        f"[bold]{conversations}[/bold] ChatGPT conversations"
+    )
+
+
+@import_app.command("cursor")
+def import_cursor(
+    root: Path | None = typer.Option(None, "--root", help="defaults to ~/.cursor"),
+) -> None:
+    """Import readable Cursor conversation/log files."""
+    from superton.importers.generic_threads import GenericThreadImporter
+
+    mem = Memory(_cfg())
+    files, drawers = GenericThreadImporter(mem, "cursor", Path.home() / ".cursor").import_all(root)
+    mem.close()
+    console.print(f"[green]✓[/green] imported [bold]{drawers}[/bold] drawers from {files} Cursor files")
+
+
+@import_app.command("amp")
+def import_amp(
+    root: Path | None = typer.Option(None, "--root", help="defaults to ~/.amp"),
+) -> None:
+    """Import readable Amp conversation/log files."""
+    from superton.importers.generic_threads import GenericThreadImporter
+
+    mem = Memory(_cfg())
+    files, drawers = GenericThreadImporter(mem, "amp", Path.home() / ".amp").import_all(root)
+    mem.close()
+    console.print(f"[green]✓[/green] imported [bold]{drawers}[/bold] drawers from {files} Amp files")
+
+
 @app.command()
 def tune() -> None:
-    """Open the Modelfile in $EDITOR and rebuild mini-ton."""
+    """Open the Modelfile in $EDITOR and rebuild Miniton."""
     cfg = _cfg()
-    modelfile = Path(__file__).resolve().parent.parent / "Modelfile"
-    if not modelfile.exists():
-        console.print(f"[red]Modelfile not found at {modelfile}[/red]")
+    modelfile = _project_modelfile()
+    if modelfile is None:
+        console.print("[red]Modelfile not found[/red]")
         raise typer.Exit(1)
     editor = os.environ.get("EDITOR", "nano")
     subprocess.run([editor, str(modelfile)], check=False)
     if shutil.which("ollama"):
-        subprocess.run(["ollama", "create", cfg.model, "-f", str(modelfile)], check=False)
-        console.print(f"[green]✓[/green] {cfg.model} rebuilt")
+        rendered = _render_modelfile(modelfile, cfg)
+        model = Model(cfg)
+        if model.build(rendered):
+            console.print(f"[green]✓[/green] {cfg.model} rebuilt")
+        model.close()
 
 
 if __name__ == "__main__":
