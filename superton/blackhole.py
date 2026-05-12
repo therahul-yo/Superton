@@ -142,6 +142,53 @@ def mascot_frame(t: float = 0.0) -> Text:
     return out
 
 
+def mini_mascot(
+    *,
+    core: str = "#0A0A12",
+    rim: str = "#FFB02E",
+    edge: str = "#FFD166",
+    bright: str = "#FFF4A8",
+    glow: str = "#B024F2",
+) -> Text:
+    """A compact four-row themed black hole mascot (22 columns wide).
+
+    Modeled on the SuperTon brand image:
+        row 1 — the dark dome sitting above the disk
+        row 2 — the upper rim of the disk cutting across the dome
+        row 3 — the widest, brightest line of the accretion disk
+        row 4 — the cool underglow beneath the disk
+
+    All colors are themeable so each CLI theme gets its own mascot palette.
+    """
+    t = Text()
+    # Row 1 — dome top (dark core only)
+    t.append("        ")
+    t.append("▄▄██▄▄", style=core)
+    t.append("        \n")
+    # Row 2 — upper disk ring cutting across the dome
+    t.append("     ")
+    t.append("▗▄", style=rim)
+    t.append("▟██████▙", style=edge)
+    t.append("▄▗", style=rim)
+    t.append("     \n")
+    # Row 3 — widest, brightest disk line with core still cutting through
+    t.append("▄▄", style=rim)
+    t.append("████", style=edge)
+    t.append("████", style=bright)
+    t.append("██", style=core)
+    t.append("████", style=bright)
+    t.append("████", style=edge)
+    t.append("▄▄", style=rim)
+    t.append("\n")
+    # Row 4 — violet underglow
+    t.append("    ")
+    t.append("▀▀▀", style=glow)
+    t.append("████████", style=glow)
+    t.append("▀▀▀", style=glow)
+    t.append("    \n")
+    return t
+
+
 class BlackHole:
     """A renderable, animated black hole. Use as a context manager.
 

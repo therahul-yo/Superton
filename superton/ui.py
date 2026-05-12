@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -227,6 +227,9 @@ def rule(title: str | None = None) -> None:
 def section(title: str, subtitle: str | None = None) -> None:
     _console.print()
     line = Text()
+    # Small themed anchor (prompt glyph) gives each section header a visual tie
+    # to the active theme without being noisy.
+    line.append(f"{_current.prompt_glyph} ", style=_current.primary)
     line.append(title, style="bold")
     if subtitle:
         line.append(f"  {subtitle}", style=_current.muted)
@@ -390,6 +393,50 @@ def flash(content: Any, duration: float = 0.2) -> None:
         time.sleep(duration)
 
 
+# --- mascot palettes ----------------------------------------------------------
+
+# Each theme gets its own black-hole mascot palette. Keys match blackhole.
+# `mini_mascot`'s kwargs (core / rim / edge / bright / glow).
+MASCOT_PALETTES: dict[str, dict[str, str]] = {
+    "nebula": {
+        "core": "#0A0A12",
+        "rim": "#FFB02E",
+        "edge": "#FFD166",
+        "bright": "#FFF4A8",
+        "glow": "#B024F2",
+    },
+    "mono": {
+        "core": "black",
+        "rim": "grey50",
+        "edge": "grey70",
+        "bright": "bold white",
+        "glow": "grey50",
+    },
+    "solar": {
+        "core": "#3A1505",
+        "rim": "#FF6B1A",
+        "edge": "#FFA040",
+        "bright": "#FFEAB2",
+        "glow": "#FF8842",
+    },
+    "frost": {
+        "core": "#0A1A2A",
+        "rim": "#5FB4FF",
+        "edge": "#7FD1FF",
+        "bright": "#E0F0FF",
+        "glow": "#4A8FFF",
+    },
+}
+
+
+def themed_mini_mascot() -> Text:
+    """Return the black-hole mascot colored for the active theme."""
+    from superton.blackhole import mini_mascot
+
+    palette = MASCOT_PALETTES.get(_current.name, MASCOT_PALETTES["nebula"])
+    return mini_mascot(**palette)
+
+
 def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     """Production-feel launch card shown by the interactive shell and init."""
     from superton import __version__
@@ -424,7 +471,8 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    panel(body, width=min(_console.width - 2, 74), anchor=True)
+    content = Group(themed_mini_mascot(), Text(""), body)
+    panel(content, width=min(_console.width - 2, 74), anchor=True)
     _console.print()
 
 
@@ -475,43 +523,39 @@ def progress(description: str, total: int | None = None):
         yield advance
 
 
-def boot_splash(duration: float = 0.6) -> None:
+def boot_splash(duration: float = 0.7) -> None:
     """Brief fade-in header used on shell startup.
 
-    A few frames of the primary-colored wordmark blending from muted to
-    primary. Non-terminal contexts get a single frame (no flicker).
+    The themed black-hole mascot fades in from muted → primary while the
+    wordmark resolves beside it. Non-terminal contexts get a single static
+    frame so output stays clean in CI / redirected stdout.
     """
     from superton import __version__
 
+    mascot = themed_mini_mascot()
+    wordmark_static = Text()
+    wordmark_static.append("SuperTon", style=f"bold {_current.primary}")
+    wordmark_static.append(f"  v{__version__}", style=_current.muted)
+
     if not _console.is_terminal:
-        _console.print(
-            f"[bold {_current.primary}]SuperTon[/] "
-            f"[{_current.muted}]v{__version__}[/]"
-        )
+        _console.print(mascot)
+        _console.print(wordmark_static)
         return
 
-    # Fade through a handful of muted steps then settle on primary.
-    frames = [
-        _current.muted,
-        _current.muted,
-        _current.secondary,
-        _current.primary,
-    ]
-    wordmark = "SuperTon"
-    version = f"  v{__version__}"
-    step = duration / max(len(frames), 1)
+    # The mascot is fixed; the wordmark fades in.
+    steps = [_current.muted, _current.muted, _current.secondary, _current.primary]
+    step_time = duration / max(len(steps), 1)
     with Live("", console=_console, refresh_per_second=24, transient=True) as live:
-        for color in frames:
-            t = Text()
-            t.append(wordmark, style=f"bold {color}")
-            t.append(version, style=_current.muted)
-            live.update(t)
-            time.sleep(step)
-    # Final static frame stays in scrollback.
-    t = Text()
-    t.append(wordmark, style=f"bold {_current.primary}")
-    t.append(version, style=_current.muted)
-    _console.print(t)
+        for color in steps:
+            wm = Text()
+            wm.append("SuperTon", style=f"bold {color}")
+            wm.append(f"  v{__version__}", style=_current.muted)
+            live.update(Group(mascot, wm))
+            time.sleep(step_time)
+
+    # Static final frame stays in scrollback.
+    _console.print(mascot)
+    _console.print(wordmark_static)
 
 
 def citations(hits) -> None:
