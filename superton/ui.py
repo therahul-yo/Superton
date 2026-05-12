@@ -272,6 +272,10 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None, a
     `anchor=True` uses the default ROUNDED border (for landing moments like
     the welcome / ready card). Otherwise we use a very subtle SIMPLE box —
     no heavy corners, just a thin separator vibe.
+
+    If `width` is not given, the panel shrinks to fit its content instead
+    of stretching to the console width — prevents the 'too wide' look on
+    big terminals.
     """
     _console.print(
         Panel(
@@ -280,6 +284,7 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None, a
             border_style=_current.rule,
             padding=(0, 1),
             width=width,
+            expand=width is not None,
             box=box.ROUNDED if anchor else box.SIMPLE,
         )
     )
@@ -427,7 +432,7 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    panel(body, width=min(_console.width - 2, 74), anchor=True)
+    panel(body, anchor=True)
     _console.print()
 
 
@@ -606,7 +611,7 @@ def next_steps_card(cfg) -> None:
     body.append("model    ", style=_current.muted)
     body.append(f"Miniton · {cfg.model_profile} · {cfg.base_model}", style=_current.muted)
 
-    panel(body, title="ready", width=min(_console.width - 2, 78), anchor=True)
+    panel(body, title="ready", anchor=True)
 
 
 def welcome_tour(cfg, stats: dict) -> None:
