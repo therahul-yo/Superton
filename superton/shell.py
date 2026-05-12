@@ -300,6 +300,31 @@ def _format_history(history: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _contextualize_query(question: str, history: list[tuple[str, str]] | None) -> str:
+    """For short follow-up questions, prepend the most recent user turn so
+    retrieval stays on the current conversation topic.
+
+    Without this, 'check pdf source' after 'rahul resume memory' re-runs
+    semantic search against only 'check pdf source' and typically pulls
+    unrelated Claude Code file-listing drawers.
+    """
+    if not history:
+        return question
+    # A 'short follow-up' is anything with fewer than 5 whitespace-separated
+    # words. Covers cases like 'check pdf source', 'and the projects?',
+    # 'what about python', etc.
+    if len(question.split()) >= 5:
+        return question
+    last_user = None
+    for role, text in reversed(history):
+        if role == "user":
+            last_user = text
+            break
+    if not last_user:
+        return question
+    return f"{last_user} {question}"
+
+
 def _answer(
     mem: Memory,
     model: Model,
@@ -308,7 +333,8 @@ def _answer(
 ) -> str:
     """Answer a single user message. Returns the assistant text so callers
     can append it to conversation history."""
-    raw_hits = mem.search(question, limit=8) if _should_retrieve(question) else []
+    search_query = _contextualize_query(question, history)
+    raw_hits = mem.search(search_query, limit=8) if _should_retrieve(question) else []
     hits = _relevant_hits(question, raw_hits)
     # For memory-specific queries (resume, "rahul", document, etc.) we refuse
     # when no retrieved drawer shares even a single meaningful token with the
@@ -322,15 +348,20 @@ def _answer(
         _print_assistant(refusal)
         return refusal
     context = "\n\n---\n\n".join(
-        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:900]}"
+        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
         for h in hits[:3]
     )
     system = (
-        "You are Miniton inside the SuperTon CLI. Answer conversationally and briefly. "
-        "If memory drawers are supplied, use ONLY those drawers for user, resume, document, project, "
-        "or palace-specific factual claims and cite drawer IDs. If the answer is not in the drawers, "
-        "say you do not have it in memory. If no drawers are supplied, answer normally as the local model. "
-        "Do not paste raw drawers."
+        "You are Miniton, a local assistant in the SuperTon CLI. "
+        "Rules:\n"
+        "1. If MEMORY DRAWERS are supplied, the answer MUST come from them. "
+        "Quote specific facts. Cite drawer IDs like [abcd1234] inline.\n"
+        "2. Never ask the user to provide a file, link, or path that is "
+        "already present in the drawers.\n"
+        "3. If the drawers genuinely do not contain the answer, reply exactly: "
+        "'I do not have that in memory.'\n"
+        "4. If NO drawers are supplied, answer briefly as a normal local model.\n"
+        "5. Keep answers under 6 lines unless the user asks for detail."
     )
     history_text = _format_history(history or [])
     if hits:

@@ -335,18 +335,32 @@ def ask(
         ui.blank()
 
     context = "\n\n---\n\n".join(
-        f"[drawer:{h.drawer.id[:8]} · {Path(h.drawer.source).name}]\n{h.drawer.text}"
+        f"[drawer:{h.drawer.id[:8]} · {Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
         for h in hits
+    )
+    system = (
+        "You are Miniton, a local assistant in the SuperTon CLI. "
+        "Rules:\n"
+        "1. If MEMORY DRAWERS are supplied, the answer MUST come from them. "
+        "Quote specific facts. Cite drawer IDs like [abcd1234] inline.\n"
+        "2. Never ask the user to provide a file, link, or path that is "
+        "already present in the drawers.\n"
+        "3. If the drawers genuinely do not contain the answer, reply exactly: "
+        "'I do not have that in memory.'\n"
+        "4. If NO drawers are supplied, answer briefly as a normal local model.\n"
+        "5. Keep answers under 6 lines unless the user asks for detail."
     )
     if hits:
         prompt = (
-            f"Context drawers from the palace:\n\n{context}\n\n"
-            f"Question: {question}\n\nAnswer concisely. Cite drawer IDs inline."
+            f"MEMORY DRAWERS:\n\n{context}\n\n"
+            f"User question: {question}\n\n"
+            "Answer using only the drawers above."
         )
     else:
         prompt = (
-            "No palace drawers matched this question.\n\n"
-            f"Question: {question}\n\nAnswer naturally and concisely."
+            "No memory drawers were retrieved.\n\n"
+            f"User question: {question}\n\n"
+            "Answer briefly as a local model."
         )
 
     model = Model(cfg)
@@ -361,7 +375,7 @@ def ask(
 
     ui.console().print(f"  {ui.prompt_glyph()} ", end="")
     try:
-        for tok in model.generate(prompt):
+        for tok in model.generate(prompt, system=system):
             ui.console().print(tok, end="")
         ui.blank()
         if hits:
