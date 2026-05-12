@@ -4,6 +4,11 @@
 
 > A tiny local LLM with infinite memory. Your second brain that never forgets.
 
+[![CI](https://github.com/therahul-yo/Superton/actions/workflows/ci.yml/badge.svg)](https://github.com/therahul-yo/Superton/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![License](https://img.shields.io/badge/license-Apache%202.0-green)
+![Status](https://img.shields.io/badge/status-alpha-orange)
+
 SuperTon is a CLI-first personal knowledge system. Feed it your notes, docs,
 PDFs, and conversations from other AI tools. It indexes everything verbatim
 into a **palace of memories**, then your tiny custom local model (`Miniton`)
@@ -18,12 +23,101 @@ answers your questions grounded in what you've fed it.
 - 🔌 **MCP-ready** — one command exposes your palace to Claude Code, Cursor, and Gemini CLI
 - 🪶 **Lightweight** — runs comfortably on a laptop
 
+## Demo
+
+> 🎬 **Demo video — recording soon.**
+>
+> A short clip showing ingestion → grounded answer with citations → theme
+> switch will live at [`docs/assets/demo.gif`](docs/assets/demo.gif).
+> Until then, the snippet in [Quickstart](#quickstart) shows a real
+> session.
+
+<!-- After recording, replace the block above with:
+![SuperTon demo](docs/assets/demo.gif)
+-->
+
+## Why I built this
+
+I was tired of my brain leaking. Notes scattered across Notion, Obsidian,
+random `.md` files, screenshots, and Claude Code transcripts. Every AI
+tool I used forgot the conversation the moment I closed the tab. Every
+"second brain" app wanted me to file things — but the work of filing is
+the work I was trying to avoid.
+
+I wanted one place that:
+
+1. **Eats everything I feed it** — PDFs, code, notes, AI transcripts —
+   without making me file or summarize.
+2. **Answers in my voice, from my data** — grounded in what *I* wrote,
+   not in what a frontier model hallucinated about my domain.
+3. **Stays on my laptop** — no API keys, no telemetry, no "your data
+   helps us improve our service".
+
+SuperTon is what I built. It's a CLI-first system because I live in the
+terminal, a hybrid retrieval pipeline because pure-vector search misses
+the times I half-remember a filename, and a Modelfile-driven local model
+because I wanted the answer model to be *mine* — swappable, tuneable,
+and free to forget the cloud existed.
+
+Along the way I picked up a working theory of personal RAG: **verbatim
+beats summarized**, **hybrid beats pure-vector**, and **source-filename
+hints beat clever prompting** when the user is searching for something
+they half-remember writing. The rest of this README is the receipts.
+
+## Design decisions
+
+The interesting choices, with the tradeoffs called out:
+
+- **Verbatim storage, not summarized.** Drawers store the original text.
+  Recall matters more than disk in a personal palace; a 50 MB SQLite file
+  per year is fine. Summarization would have made the model fast at
+  losing information.
+- **SQLite as source of truth, MemPalace/Chroma as a sidecar.** SQLite
+  owns listing, deletion, and exact fallback search. The vector index can
+  be wiped and rebuilt from SQLite (`superton reindex`) without data
+  loss. Durability > performance.
+- **Hybrid retrieval with source-filename hoist.** Pure vector search
+  misses queries like *"rahul resume"* — Claude Code transcripts of
+  `ls -la` embed closer to the query than the actual `resume.pdf`. The
+  retriever hoists drawers whose filename overlaps the query, then merges
+  with the hybrid v4 (`candidate_strategy="union"`, BM25 ∪ vector) result
+  from MemPalace. Raw R@5 is 96.6% on LongMemEval; tuned hybrid is 98.4%.
+- **Insert-time dedup.** Drawer ids are content-addressed
+  (`blake2b(source ⊕ text)`). Re-ingesting the same file is a no-op —
+  the semantic upsert is skipped on a hit, so re-runs are cheap.
+- **Refuse instead of confabulate.** For memory-specific queries with no
+  matching tokens in any retrieved drawer, Miniton refuses rather than
+  generating a plausible-but-wrong answer from the model's parametric
+  memory. The user gets a "did you mean…" with the closest source files
+  instead.
+- **Themes as a UX commitment, not a skin.** Four hand-tuned palettes
+  share an icon and styling vocabulary (✓ ! ✗ ℹ → ›). Paths, drawer ids,
+  commands, and keyboard hints route through `ui.style_*` helpers so
+  switching themes looks intentional, not skinned.
+- **MCP-first integration.** `superton mcp serve` exposes the palace as
+  29 MCP tools to Claude Code, Cursor, and Gemini CLI — the palace
+  becomes the shared memory layer for every agent on the machine,
+  instead of yet another tool with its own silo.
+
+## Tech stack
+
+Python 3.11+, [Typer](https://typer.tiangolo.com) (CLI),
+[Rich](https://rich.readthedocs.io) (output),
+[prompt-toolkit](https://python-prompt-toolkit.readthedocs.io)
+(interactive shell), SQLite + FTS5 (durable store),
+[MemPalace](https://github.com/MemPalace/mempalace) + ChromaDB (semantic
+sidecar + MCP), [Ollama](https://ollama.com) (local model runtime),
+optional Hugging Face Inference fallback. Packaging with
+[uv](https://docs.astral.sh/uv/) and `hatchling`. Lint with
+[ruff](https://docs.astral.sh/ruff/), tests with
+[pytest](https://docs.pytest.org).
+
 ## Install
 
 ### From GitHub
 
 ```bash
-# requires Python 3.10+ and uv
+# requires Python 3.11+ and uv
 uv tool install "git+https://github.com/therahul-yo/Superton.git"
 superton init
 ```
@@ -207,12 +301,6 @@ connect to it and get 29 tools for reading and writing drawers, navigating
 the palace, and querying the knowledge graph — all backed by your local
 SuperTon store. Your second brain becomes the memory layer for every AI
 tool on your machine.
-
-## Why?
-
-ChatGPT forgets. Notion makes you file. Obsidian plugins call cloud APIs.
-None of them give you a model that's *yours*, fed by a memory that's *yours*,
-running on a machine that's *yours*. SuperTon does.
 
 ## Model Strategy
 
