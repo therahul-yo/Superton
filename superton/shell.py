@@ -4,42 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
-
-from superton import __version__
+from superton import __version__, ui
 from superton.config import MODEL_PROFILES, Config, write_settings
 from superton.memory import Memory
 from superton.model import Model, ModelError
 
-console = Console()
+console = ui.console()
+
 GREETINGS = {"hi", "hey", "hello", "yo", "sup"}
 STOPWORDS = {
-    "a",
-    "about",
-    "an",
-    "and",
-    "are",
-    "from",
-    "give",
-    "gimme",
-    "how",
-    "i",
-    "in",
-    "is",
-    "it",
-    "me",
-    "my",
-    "of",
-    "on",
-    "the",
-    "this",
-    "to",
-    "u",
-    "use",
-    "what",
-    "you",
+    "a", "about", "an", "and", "are", "from", "give", "gimme", "how", "i",
+    "in", "is", "it", "me", "my", "of", "on", "the", "this", "to", "u",
+    "use", "what", "you",
 }
 COMMAND_HELP = {
     "/add": "ingest a file or directory",
@@ -53,6 +29,7 @@ COMMAND_HELP = {
     "/search": "search memory",
     "/sources": "list indexed sources",
     "/stats": "show palace stats",
+    "/theme": "show/switch CLI theme",
 }
 
 
@@ -61,6 +38,9 @@ def _prompt() -> str:
         from prompt_toolkit import prompt
         from prompt_toolkit.completion import Completer, Completion
         from prompt_toolkit.formatted_text import HTML
+        from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.lexers import Lexer
+        from prompt_toolkit.styles import Style
 
         class SlashCompleter(Completer):
             def get_completions(self, document, complete_event):
@@ -71,8 +51,14 @@ def _prompt() -> str:
                 if len(parts) == 2 and parts[0] == "/model":
                     word = parts[-1]
                     for profile in MODEL_PROFILES:
-                        if profile.startswith(word):
+                        if profile.startswith(word) or word in profile:
                             yield Completion(profile, start_position=-len(word))
+                    return
+                if len(parts) == 2 and parts[0] == "/theme":
+                    word = parts[-1]
+                    for name in ui.THEMES:
+                        if name.startswith(word) or word in name:
+                            yield Completion(name, start_position=-len(word))
                     return
                 if " " in text:
                     return
@@ -84,63 +70,81 @@ def _prompt() -> str:
                             display_meta=help_text,
                         )
 
+        class SuperTonLexer(Lexer):
+            """Color slash commands vs their arguments live as the user types."""
+
+            def lex_document(self, document):
+                def get_line(lineno: int):
+                    line = document.lines[lineno]
+                    if not line.startswith("/"):
+                        return [("class:text", line)]
+                    parts = line.split(" ", 1)
+                    head = parts[0]
+                    tail = " " + parts[1] if len(parts) > 1 else ""
+                    return [("class:cmd", head), ("class:arg", tail)]
+                return get_line
+
+        # Theme-aware styles for the lexer classes only. No change to the
+        # completion-menu behavior — we keep prompt_toolkit's defaults, which
+        # are known to work for this app (the slash menu used to open fine
+        # before we tinkered).
+        t = ui.theme()
+        pt_style = Style.from_dict({
+            "cmd": f"bold {t.primary}",
+            "arg": t.secondary if t.secondary.startswith("#") else "",
+            "text": "",
+        })
+
+        # Persistent command history across shell sessions.
+        cfg = Config.load()
+        history_dir = cfg.home / "history"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        history = FileHistory(str(history_dir / "shell"))
+
+        glyph = t.prompt_glyph
         return prompt(
-            "› ",
-            placeholder=HTML("<gray>Ask from memory, paste a file path, or type /search &lt;query&gt;</gray>"),
+            f"{glyph} ",
+            placeholder=HTML(
+                "<gray>Ask from memory, paste a file path, or type /search &lt;query&gt;</gray>"
+            ),
             completer=SlashCompleter(),
             complete_while_typing=True,
+            history=history,
+            lexer=SuperTonLexer(),
+            style=pt_style,
         )
     except (ImportError, ValueError):
-        return input("› ")
+        return input(f"{ui.theme().prompt_glyph} ")
 
 
-def _print_assistant(answer: str) -> None:
-    console.print()
-    console.print("[bold]Miniton[/bold]")
-    console.print(answer)
-    console.print()
+def _print_assistant(answer: str, hits=None) -> None:
+    """Print Miniton's reply. Tests assert exact body substrings."""
+    ui.blank()
+    ui.console().print(f"[bold {ui.theme().primary}]Miniton[/]")
+    ui.console().print(answer)
+    if hits:
+        ui.citations(hits[:3])
+    ui.blank()
 
 
 def _run_with_spinner(label: str, work):
-    if not console.is_terminal:
+    if not ui.console().is_terminal:
         return work()
-    with console.status(f"[dim]{label}[/dim]", spinner="dots"):
+    with ui.spinner(label):
         return work()
 
 
 def _print_intro(cfg: Config, mem: Memory) -> None:
     s = mem.stats()
-    status = f"{s['drawers']}d · {s['wings']}w · {s['rooms']}r"
-    card = Text()
-    card.append("›_ SuperTon", style="bold")
-    card.append(f"  (v{__version__})\n", style="dim")
-    card.append("\n")
-    card.append("model:  ", style="dim")
-    card.append("Miniton", style="bold")
-    card.append("   /model\n", style="dim")
-    card.append("memory: ", style="dim")
-    card.append("local palace", style="bold")
-    card.append(f"   {status}\n", style="dim")
-    card.append("dir:    ", style="dim")
-    card.append(str(Path.cwd()))
-
-    console.print()
-    console.print(
-        Panel(
-            card,
-            border_style="dim",
-            width=min(console.width - 4, 56),
-            padding=(0, 1),
-        )
-    )
-    console.print()
-    console.print(
-        "[bold]Tip:[/bold] paste a file path to ingest it, or ask a question grounded in your palace."
-    )
-    console.print('Try: "what projects are in my resume?"  ·  /search rate limiting  ·  /stats')
+    ui.header(cfg, s)
+    hints = [
+        "paste a file path to ingest it · ask a question grounded in your palace",
+        '/search <query>   /sources   /stats   /theme   /quit',
+    ]
     if s["drawers"] == 0:
-        console.print("[yellow]⚠[/yellow] no drawers yet. Add a file with [bold]/add <path>[/bold].")
-    console.print("[dim]" + "─" * min(console.width, 110) + "[/dim]")
+        hints.append("⚠  no drawers yet — add a file with /add <path>")
+    ui.footer_hints(hints)
+    ui.rule()
 
 
 def _path_from_input(text: str) -> Path | None:
@@ -160,7 +164,7 @@ def _ingest_path(mem: Memory, path: Path) -> tuple[int, int]:
         try:
             body = read_file(file)
         except (ValueError, RuntimeError, UnicodeDecodeError) as e:
-            console.print(f"[yellow]![/yellow] skipped {file.name}: {e}")
+            ui.warn(f"skipped {file.name}", str(e))
             continue
         files += 1
         for chunk in chunk_text(body):
@@ -177,16 +181,8 @@ def _query_tokens(query: str) -> set[str]:
 def _looks_memory_specific(query: str) -> bool:
     normalized = query.lower()
     personal_markers = (
-        "resume",
-        "resue",
-        "cv",
-        "pdf",
-        "document",
-        "file",
-        "from my",
-        "from his",
-        "fromhis",
-        "rahul",
+        "resume", "resue", "cv", "pdf", "document", "file",
+        "from my", "from his", "fromhis", "rahul",
     )
     if any(marker in normalized for marker in personal_markers):
         return True
@@ -194,53 +190,86 @@ def _looks_memory_specific(query: str) -> bool:
 
 
 def _relevant_hits(question: str, hits):
+    """Re-rank retrieval hits to prefer keyword-overlap, but never throw away
+    semantically strong matches.
+
+    Before Phase A (when retrieval was SQLite FTS + naive semantic), this was
+    a hard filter. With the MemPalace hybrid retriever it would reject
+    otherwise-correct hits just because the user's word isn't literally in
+    the drawer. We now treat keyword overlap as a bonus, not a gate.
+    """
+    if not hits:
+        return []
     tokens = _query_tokens(question)
     if not tokens:
-        return []
-    required = 2 if _looks_memory_specific(question) and len(tokens) > 1 else 1
-    relevant = []
-    for hit in hits:
+        return list(hits)
+    scored: list[tuple[float, int, object]] = []
+    for idx, hit in enumerate(hits):
         haystack = f"{Path(hit.drawer.source).name} {hit.drawer.text[:2500]}".lower()
         matches = sum(1 for token in tokens if token in haystack)
-        if matches >= required:
-            relevant.append(hit)
-    return relevant
+        # Keep the original retrieval score as the base; overlap nudges the
+        # order but cannot drop a drawer.
+        base = float(getattr(hit, "score", 0.0) or 0.0)
+        boost = 0.15 * matches
+        scored.append((base + boost, -idx, hit))
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [h for _, _, h in scored]
 
 
 def _print_search_hits(hits) -> None:
-    console.print()
+    ui.blank()
     for hit in hits:
         preview = " ".join(hit.drawer.text.split())[:220]
-        console.print(f"[cyan]{hit.drawer.id[:8]}[/cyan] · [dim]{Path(hit.drawer.source).name}[/dim]")
-        console.print(f"  {preview}")
-    console.print()
+        ui.console().print(ui.cite(hit.drawer.id, hit.drawer.source))
+        ui.console().print(f"  {preview}")
+    ui.blank()
 
 
 def _print_sources(mem: Memory) -> None:
     rows = mem.sources(limit=20)
-    console.print()
+    ui.blank()
     if not rows:
-        console.print("[dim]no sources indexed yet.[/dim]")
-        console.print()
+        ui.hint("no sources indexed yet")
+        ui.blank()
         return
+    table = ui.make_table("drawers", "source")
     for row in rows:
-        console.print(f"[cyan]{row['drawers']:>3}[/cyan]  {row['source']}")
-    console.print()
+        table.add_row(str(row["drawers"]), row["source"])
+    ui.print_table(table)
+    ui.blank()
 
 
 def _print_model(cfg: Config) -> None:
-    console.print()
+    ui.blank()
     for name, data in MODEL_PROFILES.items():
-        marker = "*" if name == cfg.model_profile else " "
-        console.print(f"{marker} [bold]{name}[/bold]  {data['base_model']}  [dim]{data['label']}[/dim]")
-    console.print()
+        marker = "●" if name == cfg.model_profile else "○"
+        ui.console().print(
+            f"{marker} [bold]{name}[/bold]  {data['base_model']}  "
+            f"[{ui.theme().muted}]{data['label']}[/]"
+        )
+    ui.blank()
+
+
+def _print_themes(cfg: Config) -> None:
+    ui.blank()
+    for t in ui.list_themes():
+        marker = "●" if t.name == cfg.theme else "○"
+        swatch = (
+            f"[{t.primary}]██[/] [{t.secondary}]██[/] "
+            f"[{t.success}]✓[/] [{t.warning}]![/] [{t.error}]✗[/]"
+        )
+        ui.console().print(
+            f"{marker} [bold]{t.name}[/bold]  {swatch}  "
+            f"[{ui.theme().muted}]{t.label}[/]"
+        )
+    ui.blank()
 
 
 def _switch_model(profile: str) -> Config:
     if profile not in MODEL_PROFILES:
-        console.print()
-        console.print("[yellow]![/yellow] choose one of: fast, better, strong")
-        console.print()
+        ui.blank()
+        ui.warn("choose one of: fast, better, strong")
+        ui.blank()
         return Config.load()
     selected = MODEL_PROFILES[profile]
     cfg = Config.load()
@@ -250,11 +279,75 @@ def _switch_model(profile: str) -> Config:
         base_model=selected["base_model"],
         hf_model=selected["hf_model"],
     )
-    console.print()
-    console.print(f"[green]✓[/green] model profile set to [bold]{profile}[/bold] ({selected['base_model']})")
-    console.print("  run [bold]superton init --yes[/bold] to pull/rebuild if the model is not installed")
-    console.print()
+    ui.flash(
+        f"[bold {ui.theme().primary}]model[/] → "
+        f"[bold]{profile}[/]  [{ui.theme().muted}]{selected['base_model']}[/]"
+    )
+    ui.blank()
+    ui.ok(f"model profile → {profile}", selected["base_model"])
+    ui.hint("run [bold]superton init --yes[/bold] to pull/rebuild if needed")
+    ui.blank()
     return Config.load()
+
+
+def _switch_theme(name: str) -> Config:
+    if name not in ui.THEMES:
+        ui.blank()
+        ui.warn(f"unknown theme — choose one of: {', '.join(ui.THEMES)}")
+        ui.blank()
+        return Config.load()
+    cfg = Config.load()
+    write_settings(cfg.home, theme=name)
+    ui.set_theme(name)
+    t = ui.theme()
+    swatch = (
+        f"[bold {t.primary}]SuperTon[/] → "
+        f"[{t.primary}]██[/] [{t.secondary}]██[/] "
+        f"[{t.success}]✓[/] [{t.warning}]![/] [{t.error}]✗[/]  "
+        f"[{t.muted}]{t.label}[/]"
+    )
+    ui.flash(swatch)
+    ui.blank()
+    ui.ok(f"theme → {name}", ui.theme().label)
+    ui.blank()
+    return Config.load()
+
+
+def _any_token_match(question: str, hits) -> bool:
+    """True if at least one hit shares any meaningful token with the query.
+
+    Used to decide whether to refuse a memory-specific question. We only look
+    at token *presence* — the ranking of hits is handled by `_relevant_hits`.
+    """
+    tokens = _query_tokens(question)
+    if not tokens:
+        return False
+    for hit in hits:
+        haystack = f"{Path(hit.drawer.source).name} {hit.drawer.text[:2500]}".lower()
+        if any(token in haystack for token in tokens):
+            return True
+    return False
+
+
+def _format_suggestions(raw_hits, limit: int = 2) -> str:
+    """Render a 'did you mean' list from raw retrieval hits.
+
+    Dedupes by source filename so the user sees distinct candidate documents,
+    not three chunks from the same file.
+    """
+    if not raw_hits:
+        return ""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for hit in raw_hits:
+        src = Path(hit.drawer.source).name
+        if src in seen:
+            continue
+        seen.add(src)
+        lines.append(f"  • {src}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
 
 
 def _should_retrieve(question: str) -> bool:
@@ -262,47 +355,139 @@ def _should_retrieve(question: str) -> bool:
     return normalized not in GREETINGS
 
 
-def _answer(mem: Memory, model: Model, question: str) -> None:
-    raw_hits = mem.search(question, limit=8) if _should_retrieve(question) else []
-    hits = _relevant_hits(question, raw_hits)
-    if raw_hits and not hits and not _looks_memory_specific(question):
-        hits = raw_hits[:3]
-    if _looks_memory_specific(question) and not hits:
-        _print_assistant(
-            "I do not have matching memory for that. Add the resume or document first with "
-            "`/add <path>` or paste the file path directly."
+def _build_system_prompt(*, has_drawers: bool) -> str:
+    """Two distinct prompts — one for grounded answers, one for free-form.
+
+    Branching on the presence of drawers makes the instruction unambiguous
+    for small (1.5B) models. When drawers exist, we forbid the refuse path.
+    When they don't, the model answers as a normal local assistant.
+    """
+    if has_drawers:
+        return (
+            "You are Miniton, a local assistant in the SuperTon CLI. "
+            "MEMORY DRAWERS from the user's palace are supplied below — the "
+            "user has already given you access to them.\n\n"
+            "Your job:\n"
+            "- Use ONLY the drawers to answer. Quote specific facts from them.\n"
+            "- For vague questions like 'X details', 'tell me about X', or "
+            "'summary', produce 3-6 concise bullet points that summarize what "
+            "the drawers say about the subject.\n"
+            "- Cite drawer ids inline like [abcd1234] when quoting.\n"
+            "- Never ask for a file, link, or path — the user has already "
+            "ingested it.\n"
+            "- Never say 'I do not have that in memory'. The drawers are "
+            "right here. Read them and answer.\n"
+            "- Keep answers under 8 lines unless the user asks for detail."
         )
-        return
+    return (
+        "You are Miniton, a local assistant in the SuperTon CLI. No memory "
+        "drawers were retrieved for this message. Answer briefly and "
+        "conversationally as a regular local model. Keep answers under 6 "
+        "lines."
+    )
+
+
+# --- conversation memory ------------------------------------------------------
+
+CONVERSATION_WINDOW = 6  # keep last N (user, assistant) turns
+
+
+def _format_history(history: list[tuple[str, str]]) -> str:
+    """Render recent turns for the prompt — compact, role-tagged."""
+    if not history:
+        return ""
+    lines: list[str] = []
+    for role, text in history[-CONVERSATION_WINDOW:]:
+        lines.append(f"{role}: {text.strip()}")
+    return "\n".join(lines)
+
+
+def _contextualize_query(question: str, history: list[tuple[str, str]] | None) -> str:
+    """For short follow-up questions, prepend the most recent user turn so
+    retrieval stays on the current conversation topic.
+
+    Without this, 'check pdf source' after 'rahul resume memory' re-runs
+    semantic search against only 'check pdf source' and typically pulls
+    unrelated Claude Code file-listing drawers.
+    """
+    if not history:
+        return question
+    # A 'short follow-up' is anything with fewer than 5 whitespace-separated
+    # words. Covers cases like 'check pdf source', 'and the projects?',
+    # 'what about python', etc.
+    if len(question.split()) >= 5:
+        return question
+    last_user = None
+    for role, text in reversed(history):
+        if role == "user":
+            last_user = text
+            break
+    if not last_user:
+        return question
+    return f"{last_user} {question}"
+
+
+def _answer(
+    mem: Memory,
+    model: Model,
+    question: str,
+    history: list[tuple[str, str]] | None = None,
+) -> str:
+    """Answer a single user message. Returns the assistant text so callers
+    can append it to conversation history."""
+    search_query = _contextualize_query(question, history)
+    raw_hits = mem.search(search_query, limit=8) if _should_retrieve(question) else []
+    hits = _relevant_hits(question, raw_hits)
+    # For memory-specific queries (resume, "rahul", document, etc.) we refuse
+    # when no retrieved drawer shares even a single meaningful token with the
+    # query. This keeps Miniton from confabulating an answer from drawers
+    # that were semantically nearby but talk about something unrelated.
+    if _looks_memory_specific(question) and not _any_token_match(question, hits):
+        base = "I do not have matching memory for that."
+        suggestions = _format_suggestions(raw_hits)
+        if suggestions:
+            refusal = (
+                f"{base}\n\n"
+                "Did you mean one of these?\n"
+                f"{suggestions}\n\n"
+                "Ask about one of those, or add the source with `/add <path>`."
+            )
+        else:
+            refusal = (
+                f"{base} Add the resume or document first with "
+                "`/add <path>` or paste the file path directly."
+            )
+        _print_assistant(refusal)
+        return refusal
     context = "\n\n---\n\n".join(
-        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:900]}"
+        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
         for h in hits[:3]
     )
-    system = (
-        "You are Miniton inside the SuperTon CLI. Answer conversationally and briefly. "
-        "If memory drawers are supplied, use ONLY those drawers for user, resume, document, project, "
-        "or palace-specific factual claims and cite drawer IDs. If the answer is not in the drawers, "
-        "say you do not have it in memory. If no drawers are supplied, answer normally as the local model. "
-        "Do not paste raw drawers."
-    )
+    system = _build_system_prompt(has_drawers=bool(hits))
+    history_text = _format_history(history or [])
     if hits:
-        prompt = (
-            f"Memory drawers:\n\n{context}\n\n"
-            f"User message: {question}\n\n"
-            "Write a concise answer, not a dump of the context."
-        )
+        parts = []
+        if history_text:
+            parts.append(f"Recent conversation:\n{history_text}")
+        parts.append(f"Memory drawers:\n\n{context}")
+        parts.append(f"User message: {question}")
+        parts.append("Write a concise answer, not a dump of the context.")
+        prompt = "\n\n".join(parts)
     else:
-        prompt = (
-            "No memory drawers were retrieved for this message.\n\n"
-            f"User message: {question}\n\n"
-            "Answer naturally and concisely."
-        )
+        parts = []
+        if history_text:
+            parts.append(f"Recent conversation:\n{history_text}")
+        parts.append("No memory drawers were retrieved for this message.")
+        parts.append(f"User message: {question}")
+        parts.append("Answer naturally and concisely.")
+        prompt = "\n\n".join(parts)
     try:
-        def generate_answer() -> str:
+        def generate_answer():
             if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
                 model.start_ollama(timeout=5.0)
-            return "".join(model.generate(prompt, system=system)).strip()
+            yield from model.generate(prompt, system=system)
 
-        answer = _run_with_spinner("Miniton thinking", generate_answer)
+        answer = ui.stream_answer(generate_answer())
     except ModelError:
         if hits:
             answer = (
@@ -311,32 +496,49 @@ def _answer(mem: Memory, model: Model, question: str) -> None:
             )
         else:
             answer = "Miniton is not available. Run `superton init` to start/build the local model."
+        _print_assistant(answer, hits=hits)
+        return answer
     if not answer:
         answer = "I found related memory, but Miniton returned an empty answer."
-    _print_assistant(answer)
+        _print_assistant(answer, hits=hits)
+        return answer
+    if hits:
+        ui.citations(hits[:3])
+    ui.blank()
+    return answer
 
 
 def run() -> None:
     cfg = Config.load()
+    ui.set_theme(cfg.theme)
     mem = Memory(cfg)
     model = Model(cfg)
+    history: list[tuple[str, str]] = []
     try:
+        ui.boot_splash()
         _print_intro(cfg, mem)
         while True:
             try:
                 text = _prompt().strip()
             except (EOFError, KeyboardInterrupt):
-                console.print()
+                ui.blank()
                 break
             if not text:
                 continue
             if text in {"/quit", "/exit", "quit", "exit"}:
                 break
             if text in {"/help", "?"}:
-                console.print(
+                ui.console().print(
                     "/add <path> · /search <query> · /sources · /forget-source <name> · "
-                    "/refresh <path> · /model [fast|better|strong] · /doctor · /reindex · /quit"
+                    "/refresh <path> · /model [fast|better|strong] · /theme · /clear · "
+                    "/doctor · /reindex · /quit"
                 )
+                continue
+            if text == "/clear":
+                history = []
+                ui.blank()
+                ui.ok("conversation cleared")
+                ui.blank()
                 continue
             if text == "/model":
                 _print_model(cfg)
@@ -346,15 +548,23 @@ def run() -> None:
                 model.close()
                 model = Model(cfg)
                 continue
+            if text == "/theme":
+                _print_themes(cfg)
+                continue
+            if text.startswith("/theme "):
+                cfg = _switch_theme(text.removeprefix("/theme ").strip())
+                continue
             if text == "/doctor":
                 s = mem.stats()
-                console.print()
-                console.print(
-                    f"home {cfg.home}\n"
-                    f"model {cfg.model_profile} · {cfg.base_model}\n"
-                    f"memory {s['backend']} · {s['drawers']} drawers · semantic {s['semantic_enabled']}"
-                )
-                console.print()
+                ui.blank()
+                ui.kv([
+                    ("home", str(cfg.home)),
+                    ("model", f"{cfg.model_profile} · {cfg.base_model}"),
+                    ("memory", f"{s['backend']} · {s['drawers']} drawers"),
+                    ("semantic", "on" if s["semantic_enabled"] else "off"),
+                    ("theme", f"{cfg.theme} · {ui.theme().label}"),
+                ])
+                ui.blank()
                 continue
             if text == "/sources":
                 _print_sources(mem)
@@ -362,80 +572,100 @@ def run() -> None:
             if text.startswith("/forget-source "):
                 source = text.removeprefix("/forget-source ").strip()
                 removed = mem.forget_source(source)
-                console.print()
+                ui.blank()
                 if removed:
-                    console.print(f"[green]✓[/green] forgot {removed} drawer(s) from {source}")
+                    ui.ok(f"forgot {removed} drawer(s)", f"from {source}")
                 else:
-                    console.print(f"[yellow]![/yellow] no source matched {source}")
-                console.print()
+                    ui.warn(f"no source matched {source}")
+                ui.blank()
                 continue
             if text.startswith("/refresh "):
                 path = Path(text.removeprefix("/refresh ").strip()).expanduser()
                 if not path.exists():
-                    console.print()
-                    console.print(f"[yellow]![/yellow] not found: {path}")
-                    console.print()
+                    ui.blank()
+                    ui.warn(f"not found: {path}")
+                    ui.blank()
                     continue
                 removed = 0
                 for file in path.rglob("*") if path.is_dir() else [path]:
                     if file.is_file():
                         removed += mem.forget_source(str(file))
                 files, drawers = _ingest_path(mem, path)
-                console.print()
-                console.print(
-                    f"[green]✓[/green] refreshed {files} file(s): "
-                    f"removed {removed}, added {drawers}"
+                ui.blank()
+                ui.ok(
+                    f"refreshed {files} file(s)",
+                    f"removed {removed}, added {drawers}",
                 )
-                console.print()
+                ui.blank()
                 continue
             if text == "/reindex":
-                total = mem.reindex_semantic()
-                console.print()
-                console.print(f"[green]✓[/green] reindexed {total} drawers")
-                console.print()
+                with ui.spinner("rebuilding semantic index"):
+                    total = mem.reindex_semantic()
+                ui.blank()
+                ui.ok(f"reindexed {total} drawers")
+                ui.blank()
                 continue
             if text == "/stats":
                 s = mem.stats()
-                console.print()
-                console.print(
-                    f"drawers {s['drawers']} · wings {s['wings']} · rooms {s['rooms']} · "
-                    f"backend {s['backend']}"
-                )
-                console.print()
+                ui.blank()
+                ui.kv([
+                    ("drawers", str(s["drawers"])),
+                    ("wings", str(s["wings"])),
+                    ("rooms", str(s["rooms"])),
+                    ("backend", str(s["backend"])),
+                ])
+                ui.blank()
                 continue
             path = _path_from_input(text)
             if path is not None:
                 files, drawers = _ingest_path(mem, path)
-                console.print(f"[green]✓[/green] ingested {drawers} drawers from {files} file(s)")
+                ui.ok(f"ingested {drawers} drawers", f"from {files} file(s)")
                 continue
             if text == "/search":
-                console.print()
-                console.print("usage: /search <query>")
-                console.print()
+                ui.blank()
+                ui.hint("usage: /search <query>")
+                ui.blank()
                 continue
             if text.startswith("/search "):
                 query = text.removeprefix("/search ").strip()
-                hits = _relevant_hits(query, mem.search(query, limit=8))
+                with ui.spinner(f"searching for {query!r}"):
+                    hits = _relevant_hits(query, mem.search(query, limit=8))
                 if not hits:
-                    console.print()
-                    console.print("[dim]no drawers matched.[/dim]")
-                    console.print()
+                    ui.blank()
+                    ui.hint("no drawers matched")
+                    ui.blank()
                     continue
                 _print_search_hits(hits[:5])
                 continue
             if text.startswith("/add "):
                 path = Path(text.removeprefix("/add ").strip()).expanduser()
                 if not path.exists():
-                    console.print()
-                    console.print(f"[yellow]![/yellow] not found: {path}")
-                    console.print()
+                    ui.blank()
+                    ui.warn(f"not found: {path}")
+                    ui.blank()
                     continue
                 files, drawers = _ingest_path(mem, path)
-                console.print()
-                console.print(f"[green]✓[/green] ingested {drawers} drawers from {files} file(s)")
-                console.print()
+                ui.blank()
+                ui.ok(f"ingested {drawers} drawers", f"from {files} file(s)")
+                ui.blank()
                 continue
-            _answer(mem, model, text)
+            _answer_text = _answer(mem, model, text, history=history)
+            history.append(("user", text))
+            history.append(("assistant", _answer_text))
+            # Bound the ring buffer.
+            if len(history) > CONVERSATION_WINDOW * 2:
+                history = history[-CONVERSATION_WINDOW * 2 :]
     finally:
         mem.close()
         model.close()
+
+
+# Back-compat: some older tests/scripts looked for __version__ here.
+__all__ = [
+    "_answer",
+    "_ingest_path",
+    "_looks_memory_specific",
+    "_relevant_hits",
+    "run",
+    "__version__",
+]
