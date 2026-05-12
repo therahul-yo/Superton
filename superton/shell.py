@@ -41,16 +41,54 @@ STOPWORDS = {
     "what",
     "you",
 }
+COMMAND_HELP = {
+    "/add": "ingest a file or directory",
+    "/doctor": "show runtime health",
+    "/forget-source": "remove all drawers from a source",
+    "/help": "show shortcuts",
+    "/model": "show/switch model profile",
+    "/quit": "exit SuperTon",
+    "/refresh": "reingest a source and remove stale chunks",
+    "/reindex": "rebuild semantic index",
+    "/search": "search memory",
+    "/sources": "list indexed sources",
+    "/stats": "show palace stats",
+}
 
 
 def _prompt() -> str:
     try:
         from prompt_toolkit import prompt
+        from prompt_toolkit.completion import Completer, Completion
         from prompt_toolkit.formatted_text import HTML
+
+        class SlashCompleter(Completer):
+            def get_completions(self, document, complete_event):
+                text = document.text_before_cursor
+                if not text.startswith("/"):
+                    return
+                parts = text.split()
+                if len(parts) == 2 and parts[0] == "/model":
+                    word = parts[-1]
+                    for profile in MODEL_PROFILES:
+                        if profile.startswith(word):
+                            yield Completion(profile, start_position=-len(word))
+                    return
+                if " " in text:
+                    return
+                for command, help_text in COMMAND_HELP.items():
+                    if command.startswith(text):
+                        yield Completion(
+                            command,
+                            start_position=-len(text),
+                            display_meta=help_text,
+                        )
 
         return prompt(
             "› ",
             placeholder=HTML("<gray>Ask from memory, paste a file path, or type /search &lt;query&gt;</gray>"),
+            completer=SlashCompleter(),
+            complete_while_typing=True,
         )
     except (ImportError, ValueError):
         return input("› ")
