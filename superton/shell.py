@@ -515,7 +515,6 @@ def run() -> None:
     model = Model(cfg)
     history: list[tuple[str, str]] = []
     try:
-        ui.boot_splash()
         _print_intro(cfg, mem)
         while True:
             try:
