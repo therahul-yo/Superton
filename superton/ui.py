@@ -523,26 +523,24 @@ def progress(description: str, total: int | None = None):
         yield advance
 
 
-def boot_splash(duration: float = 0.7) -> None:
-    """Brief fade-in header used on shell startup.
+def boot_splash(duration: float = 0.6) -> None:
+    """Brief fade-in wordmark shown on shell startup.
 
-    The themed black-hole mascot fades in from muted → primary while the
-    wordmark resolves beside it. Non-terminal contexts get a single static
-    frame so output stays clean in CI / redirected stdout.
+    Pure typography: the 'SuperTon' wordmark fades from muted → primary
+    over a few frames. The mascot is intentionally NOT drawn here — the
+    welcome panel that follows is its anchor, and rendering the mascot
+    twice reads as duplication on the screen.
     """
     from superton import __version__
 
-    mascot = themed_mini_mascot()
     wordmark_static = Text()
     wordmark_static.append("SuperTon", style=f"bold {_current.primary}")
     wordmark_static.append(f"  v{__version__}", style=_current.muted)
 
     if not _console.is_terminal:
-        _console.print(mascot)
         _console.print(wordmark_static)
         return
 
-    # The mascot is fixed; the wordmark fades in.
     steps = [_current.muted, _current.muted, _current.secondary, _current.primary]
     step_time = duration / max(len(steps), 1)
     with Live("", console=_console, refresh_per_second=24, transient=True) as live:
@@ -550,11 +548,9 @@ def boot_splash(duration: float = 0.7) -> None:
             wm = Text()
             wm.append("SuperTon", style=f"bold {color}")
             wm.append(f"  v{__version__}", style=_current.muted)
-            live.update(Group(mascot, wm))
+            live.update(wm)
             time.sleep(step_time)
 
-    # Static final frame stays in scrollback.
-    _console.print(mascot)
     _console.print(wordmark_static)
 
 
