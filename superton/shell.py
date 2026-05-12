@@ -80,11 +80,13 @@ def _prompt() -> str:
         return input(f"{ui.theme().prompt_glyph} ")
 
 
-def _print_assistant(answer: str) -> None:
+def _print_assistant(answer: str, hits=None) -> None:
     """Print Miniton's reply. Tests assert exact body substrings."""
     ui.blank()
     ui.console().print(f"[bold {ui.theme().primary}]Miniton[/]")
     ui.console().print(answer)
+    if hits:
+        ui.citations(hits[:3])
     ui.blank()
 
 
@@ -283,7 +285,29 @@ def _should_retrieve(question: str) -> bool:
     return normalized not in GREETINGS
 
 
-def _answer(mem: Memory, model: Model, question: str) -> None:
+# --- conversation memory ------------------------------------------------------
+
+CONVERSATION_WINDOW = 6  # keep last N (user, assistant) turns
+
+
+def _format_history(history: list[tuple[str, str]]) -> str:
+    """Render recent turns for the prompt — compact, role-tagged."""
+    if not history:
+        return ""
+    lines: list[str] = []
+    for role, text in history[-CONVERSATION_WINDOW:]:
+        lines.append(f"{role}: {text.strip()}")
+    return "\n".join(lines)
+
+
+def _answer(
+    mem: Memory,
+    model: Model,
+    question: str,
+    history: list[tuple[str, str]] | None = None,
+) -> str:
+    """Answer a single user message. Returns the assistant text so callers
+    can append it to conversation history."""
     raw_hits = mem.search(question, limit=8) if _should_retrieve(question) else []
     hits = _relevant_hits(question, raw_hits)
     # For memory-specific queries (resume, "rahul", document, etc.) we refuse
@@ -291,11 +315,12 @@ def _answer(mem: Memory, model: Model, question: str) -> None:
     # query. This keeps Miniton from confabulating an answer from drawers
     # that were semantically nearby but talk about something unrelated.
     if _looks_memory_specific(question) and not _any_token_match(question, hits):
-        _print_assistant(
+        refusal = (
             "I do not have matching memory for that. Add the resume or document first with "
             "`/add <path>` or paste the file path directly."
         )
-        return
+        _print_assistant(refusal)
+        return refusal
     context = "\n\n---\n\n".join(
         f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:900]}"
         for h in hits[:3]
@@ -307,18 +332,23 @@ def _answer(mem: Memory, model: Model, question: str) -> None:
         "say you do not have it in memory. If no drawers are supplied, answer normally as the local model. "
         "Do not paste raw drawers."
     )
+    history_text = _format_history(history or [])
     if hits:
-        prompt = (
-            f"Memory drawers:\n\n{context}\n\n"
-            f"User message: {question}\n\n"
-            "Write a concise answer, not a dump of the context."
-        )
+        parts = []
+        if history_text:
+            parts.append(f"Recent conversation:\n{history_text}")
+        parts.append(f"Memory drawers:\n\n{context}")
+        parts.append(f"User message: {question}")
+        parts.append("Write a concise answer, not a dump of the context.")
+        prompt = "\n\n".join(parts)
     else:
-        prompt = (
-            "No memory drawers were retrieved for this message.\n\n"
-            f"User message: {question}\n\n"
-            "Answer naturally and concisely."
-        )
+        parts = []
+        if history_text:
+            parts.append(f"Recent conversation:\n{history_text}")
+        parts.append("No memory drawers were retrieved for this message.")
+        parts.append(f"User message: {question}")
+        parts.append("Answer naturally and concisely.")
+        prompt = "\n\n".join(parts)
     try:
         def generate_answer() -> str:
             if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
@@ -336,7 +366,8 @@ def _answer(mem: Memory, model: Model, question: str) -> None:
             answer = "Miniton is not available. Run `superton init` to start/build the local model."
     if not answer:
         answer = "I found related memory, but Miniton returned an empty answer."
-    _print_assistant(answer)
+    _print_assistant(answer, hits=hits)
+    return answer
 
 
 def run() -> None:
@@ -344,7 +375,9 @@ def run() -> None:
     ui.set_theme(cfg.theme)
     mem = Memory(cfg)
     model = Model(cfg)
+    history: list[tuple[str, str]] = []
     try:
+        ui.boot_splash()
         _print_intro(cfg, mem)
         while True:
             try:
@@ -359,9 +392,15 @@ def run() -> None:
             if text in {"/help", "?"}:
                 ui.console().print(
                     "/add <path> · /search <query> · /sources · /forget-source <name> · "
-                    "/refresh <path> · /model [fast|better|strong] · /theme · "
+                    "/refresh <path> · /model [fast|better|strong] · /theme · /clear · "
                     "/doctor · /reindex · /quit"
                 )
+                continue
+            if text == "/clear":
+                history = []
+                ui.blank()
+                ui.ok("conversation cleared")
+                ui.blank()
                 continue
             if text == "/model":
                 _print_model(cfg)
@@ -472,7 +511,12 @@ def run() -> None:
                 ui.ok(f"ingested {drawers} drawers", f"from {files} file(s)")
                 ui.blank()
                 continue
-            _answer(mem, model, text)
+            _answer_text = _answer(mem, model, text, history=history)
+            history.append(("user", text))
+            history.append(("assistant", _answer_text))
+            # Bound the ring buffer.
+            if len(history) > CONVERSATION_WINDOW * 2:
+                history = history[-CONVERSATION_WINDOW * 2 :]
     finally:
         mem.close()
         model.close()

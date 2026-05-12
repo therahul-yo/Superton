@@ -111,20 +111,25 @@ def _ingest_into_memory(mem: Memory, path: Path, *, wing: str, room: str) -> tup
     files = list(walk(path))
     total_drawers = 0
     skipped = 0
-    for f in files:
-        try:
-            text = read_file(f)
-        except (ValueError, RuntimeError, UnicodeDecodeError) as e:
-            ui.warn("skip", f"{f.name}: {e}")
-            skipped += 1
-            continue
-        if not text.strip():
-            continue
-        for chunk in chunk_text(text):
-            mem.add(text=chunk, source=str(f), wing=wing, room=room)
-            total_drawers += 1
-        rel = f.relative_to(path) if path.is_dir() else f.name
-        ui.console().print(f"  [{ui.theme().success}]+[/] {rel}")
+    if not files:
+        return 0, 0, 0
+    with ui.progress("ingesting", total=len(files)) as advance:
+        for f in files:
+            rel = f.relative_to(path) if path.is_dir() else Path(f.name)
+            try:
+                text = read_file(f)
+            except (ValueError, RuntimeError, UnicodeDecodeError) as e:
+                ui.warn(f"skip {rel}", str(e))
+                skipped += 1
+                advance(description=f"ingesting  [dim]skip {rel}[/]")
+                continue
+            if not text.strip():
+                advance(description=f"ingesting  [dim]empty {rel}[/]")
+                continue
+            for chunk in chunk_text(text):
+                mem.add(text=chunk, source=str(f), wing=wing, room=room)
+                total_drawers += 1
+            advance(description=f"ingesting  [dim]{rel}[/]")
     return len(files) - skipped, total_drawers, skipped
 
 
@@ -359,6 +364,8 @@ def ask(
         for tok in model.generate(prompt):
             ui.console().print(tok, end="")
         ui.blank()
+        if hits:
+            ui.citations(hits[:3])
     except (OllamaError, ModelError) as e:
         ui.err(f"{e}")
     finally:
@@ -706,6 +713,91 @@ def tune() -> None:
         if model.build(rendered):
             ui.ok(f"{cfg.model} rebuilt")
         model.close()
+
+
+# --- MemPalace power-user commands --------------------------------------------
+
+mcp_app = typer.Typer(help="Expose the palace over MCP for Claude / Cursor / Gemini.")
+app.add_typer(mcp_app, name="mcp")
+
+
+@mcp_app.command("serve")
+def mcp_serve(
+    collection: str | None = typer.Option(
+        None, "--collection", "-c", help="override the semantic collection name"
+    ),
+) -> None:
+    """Run the MemPalace MCP server against the SuperTon palace.
+
+    This is a delegating wrapper. Other AI tools (Claude Code, Cursor,
+    Gemini CLI) can connect to it over stdio and get 29 tools for reading
+    and writing drawers, querying the knowledge graph, and navigating the
+    palace — backed by your SuperTon store.
+    """
+    cfg = _cfg()
+    try:
+        from mempalace.mcp_server import main as mcp_main
+    except Exception as e:
+        ui.err("MemPalace MCP server unavailable", str(e))
+        raise typer.Exit(1) from e
+    ui.section("mcp serve", f"palace: {cfg.semantic_dir}")
+    ui.hint("stdio transport · Ctrl+C to stop")
+    # The server reads argv directly, so we rebuild a stable argv.
+    import sys as _sys
+    argv_backup = _sys.argv[:]
+    _sys.argv = [
+        "mempalace-mcp",
+        "--palace-path", str(cfg.semantic_dir),
+        "--collection-name", collection or cfg.semantic_collection,
+    ]
+    try:
+        mcp_main()
+    except KeyboardInterrupt:
+        ui.blank()
+        ui.ok("mcp server stopped")
+    except SystemExit:
+        raise
+    except Exception as e:
+        ui.err("mcp server crashed", str(e))
+        raise typer.Exit(1) from e
+    finally:
+        _sys.argv = argv_backup
+
+
+@app.command()
+def dedup(
+    threshold: float = typer.Option(
+        0.92, "--threshold", "-t", help="similarity threshold (0-1, higher = stricter)"
+    ),
+    dry_run: bool = typer.Option(
+        True, "--dry-run/--apply", help="preview by default; pass --apply to actually remove"
+    ),
+) -> None:
+    """Find near-duplicate drawers across sources (uses MemPalace dedup)."""
+    cfg = _cfg()
+    try:
+        from mempalace.dedup import dedup_palace
+    except Exception as e:
+        ui.err("MemPalace dedup unavailable", str(e))
+        raise typer.Exit(1) from e
+    ui.section("dedup", f"threshold {threshold:.2f} · {'dry-run' if dry_run else 'APPLY'}")
+    with ui.spinner("scanning palace for duplicates"):
+        try:
+            result = dedup_palace(
+                palace_path=str(cfg.semantic_dir),
+                collection_name=cfg.semantic_collection,
+                threshold=threshold,
+                dry_run=dry_run,
+            )
+        except TypeError:
+            # Older mempalace signatures: positional-only
+            result = dedup_palace(str(cfg.semantic_dir))
+    if isinstance(result, dict):
+        ui.kv([(k, str(v)) for k, v in result.items() if not k.startswith("_")])
+    else:
+        ui.info("dedup complete", str(result))
+    if dry_run:
+        ui.hint("re-run with [bold]--apply[/bold] to actually remove duplicates")
 
 
 # Back-compat shim for tools that looked up `console` on this module.

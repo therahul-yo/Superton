@@ -88,6 +88,11 @@ class Memory:
         self._semantic_collection: Any | None = None
         self._semantic_error: str | None = None
         self._init_schema()
+        # Warm the semantic collection handle so the first search() does not
+        # pay the Chroma client-open cost. Safe no-op when semantic is off
+        # or MemPalace is unavailable.
+        if self._semantic_enabled():
+            self._semantic(create=True)
 
     def _init_schema(self) -> None:
         self._db.executescript(

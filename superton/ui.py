@@ -18,13 +18,23 @@ Themes are chosen by, in order:
 from __future__ import annotations
 
 import os
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 from rich.text import Text
 
@@ -321,3 +331,103 @@ def footer_hints(lines: list[str]) -> None:
     """Two or three short tip lines shown below the header."""
     for line in lines:
         _console.print(f"[{_current.muted}]{line}[/]")
+
+
+# --- progress, animations, citations ------------------------------------------
+
+
+@contextmanager
+def progress(description: str, total: int | None = None):
+    """Context-managed progress bar styled by the active theme.
+
+    Usage:
+        with ui.progress("ingesting", total=len(files)) as advance:
+            for file in files:
+                ...
+                advance()
+    """
+    cols: list = [
+        SpinnerColumn(style=_current.primary),
+        TextColumn(f"[{_current.muted}]{{task.description}}[/]"),
+    ]
+    if total is not None and total > 0:
+        cols.extend([
+            BarColumn(
+                bar_width=None,
+                complete_style=_current.primary,
+                finished_style=_current.success,
+                pulse_style=_current.secondary,
+            ),
+            MofNCompleteColumn(),
+        ])
+    cols.append(TimeElapsedColumn())
+
+    prog = Progress(*cols, console=_console, transient=True)
+    with prog:
+        task = prog.add_task(description, total=total)
+
+        def advance(step: int = 1, description: str | None = None) -> None:
+            if description is not None:
+                prog.update(task, description=description)
+            prog.advance(task, step)
+
+        yield advance
+
+
+def boot_splash(duration: float = 0.6) -> None:
+    """Brief fade-in header used on shell startup.
+
+    A few frames of the primary-colored wordmark blending from muted to
+    primary. Non-terminal contexts get a single frame (no flicker).
+    """
+    from superton import __version__
+
+    if not _console.is_terminal:
+        _console.print(
+            f"[bold {_current.primary}]SuperTon[/] "
+            f"[{_current.muted}]v{__version__}[/]"
+        )
+        return
+
+    # Fade through a handful of muted steps then settle on primary.
+    frames = [
+        _current.muted,
+        _current.muted,
+        _current.secondary,
+        _current.primary,
+    ]
+    wordmark = "SuperTon"
+    version = f"  v{__version__}"
+    step = duration / max(len(frames), 1)
+    with Live("", console=_console, refresh_per_second=24, transient=True) as live:
+        for color in frames:
+            t = Text()
+            t.append(wordmark, style=f"bold {color}")
+            t.append(version, style=_current.muted)
+            live.update(t)
+            time.sleep(step)
+    # Final static frame stays in scrollback.
+    t = Text()
+    t.append(wordmark, style=f"bold {_current.primary}")
+    t.append(version, style=_current.muted)
+    _console.print(t)
+
+
+def citations(hits) -> None:
+    """Compact `Sources` footer listing the drawers used for an answer."""
+    if not hits:
+        return
+    _console.print()
+    _console.print(f"[{_current.muted}]sources[/]")
+    for i, h in enumerate(hits, 1):
+        src = Path(h.drawer.source).name
+        _console.print(
+            f"  [{_current.muted}]{i}.[/] "
+            f"[{_current.secondary}]{h.drawer.id[:8]}[/] "
+            f"[{_current.muted}]{src}[/]"
+        )
+
+
+def typing_cursor(char: str = "▎") -> str:
+    """Inline styled cursor for streaming output."""
+    return f"[{_current.primary}]{char}[/]"
