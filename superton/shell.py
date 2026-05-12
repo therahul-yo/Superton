@@ -353,6 +353,38 @@ def _should_retrieve(question: str) -> bool:
     return normalized not in GREETINGS
 
 
+def _build_system_prompt(*, has_drawers: bool) -> str:
+    """Two distinct prompts — one for grounded answers, one for free-form.
+
+    Branching on the presence of drawers makes the instruction unambiguous
+    for small (1.5B) models. When drawers exist, we forbid the refuse path.
+    When they don't, the model answers as a normal local assistant.
+    """
+    if has_drawers:
+        return (
+            "You are Miniton, a local assistant in the SuperTon CLI. "
+            "MEMORY DRAWERS from the user's palace are supplied below — the "
+            "user has already given you access to them.\n\n"
+            "Your job:\n"
+            "- Use ONLY the drawers to answer. Quote specific facts from them.\n"
+            "- For vague questions like 'X details', 'tell me about X', or "
+            "'summary', produce 3-6 concise bullet points that summarize what "
+            "the drawers say about the subject.\n"
+            "- Cite drawer ids inline like [abcd1234] when quoting.\n"
+            "- Never ask for a file, link, or path — the user has already "
+            "ingested it.\n"
+            "- Never say 'I do not have that in memory'. The drawers are "
+            "right here. Read them and answer.\n"
+            "- Keep answers under 8 lines unless the user asks for detail."
+        )
+    return (
+        "You are Miniton, a local assistant in the SuperTon CLI. No memory "
+        "drawers were retrieved for this message. Answer briefly and "
+        "conversationally as a regular local model. Keep answers under 6 "
+        "lines."
+    )
+
+
 # --- conversation memory ------------------------------------------------------
 
 CONVERSATION_WINDOW = 6  # keep last N (user, assistant) turns
@@ -429,18 +461,7 @@ def _answer(
         f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
         for h in hits[:3]
     )
-    system = (
-        "You are Miniton, a local assistant in the SuperTon CLI. "
-        "Rules:\n"
-        "1. If MEMORY DRAWERS are supplied, the answer MUST come from them. "
-        "Quote specific facts. Cite drawer IDs like [abcd1234] inline.\n"
-        "2. Never ask the user to provide a file, link, or path that is "
-        "already present in the drawers.\n"
-        "3. If the drawers genuinely do not contain the answer, reply exactly: "
-        "'I do not have that in memory.'\n"
-        "4. If NO drawers are supplied, answer briefly as a normal local model.\n"
-        "5. Keep answers under 6 lines unless the user asks for detail."
-    )
+    system = _build_system_prompt(has_drawers=bool(hits))
     history_text = _format_history(history or [])
     if hits:
         parts = []

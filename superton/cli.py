@@ -404,18 +404,9 @@ def ask(
         f"[drawer:{h.drawer.id[:8]} · {Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
         for h in hits
     )
-    system = (
-        "You are Miniton, a local assistant in the SuperTon CLI. "
-        "Rules:\n"
-        "1. If MEMORY DRAWERS are supplied, the answer MUST come from them. "
-        "Quote specific facts. Cite drawer IDs like [abcd1234] inline.\n"
-        "2. Never ask the user to provide a file, link, or path that is "
-        "already present in the drawers.\n"
-        "3. If the drawers genuinely do not contain the answer, reply exactly: "
-        "'I do not have that in memory.'\n"
-        "4. If NO drawers are supplied, answer briefly as a normal local model.\n"
-        "5. Keep answers under 6 lines unless the user asks for detail."
-    )
+    from superton.shell import _build_system_prompt
+
+    system = _build_system_prompt(has_drawers=bool(hits))
     if hits:
         prompt = (
             f"MEMORY DRAWERS:\n\n{context}\n\n"
