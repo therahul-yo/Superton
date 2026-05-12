@@ -37,8 +37,10 @@ def _prompt() -> str:
     try:
         from prompt_toolkit import prompt
         from prompt_toolkit.completion import Completer, Completion
+        from prompt_toolkit.enums import CompleteStyle
         from prompt_toolkit.formatted_text import HTML
         from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.lexers import Lexer
         from prompt_toolkit.styles import Style
 
@@ -62,11 +64,15 @@ def _prompt() -> str:
                     return
                 if " " in text:
                     return
-                # Prefix match + loose substring match so typing '/th' matches
-                # '/theme' and typing '/ourc' matches '/sources'.
+                # Loose match: typing '/th' matches '/theme', '/ourc' matches
+                # '/sources'. When text is just '/', yield every command.
+                stripped = text.lstrip("/")
                 for command, help_text in COMMAND_HELP.items():
-                    stripped = text.lstrip("/")
-                    if command.startswith(text) or (stripped and stripped in command):
+                    if (
+                        command.startswith(text)
+                        or (stripped and stripped in command)
+                        or text == "/"
+                    ):
                         yield Completion(
                             command,
                             start_position=-len(text),
@@ -86,6 +92,17 @@ def _prompt() -> str:
                     tail = " " + parts[1] if len(parts) > 1 else ""
                     return [("class:cmd", head), ("class:arg", tail)]
                 return get_line
+
+        # Force the completion menu to open the instant '/' is pressed.
+        # prompt_toolkit's default word-boundary logic does not auto-trigger
+        # the menu for punctuation-only input, so we bind explicitly.
+        bindings = KeyBindings()
+
+        @bindings.add("/")
+        def _open_slash_menu(event):
+            buf = event.current_buffer
+            buf.insert_text("/")
+            buf.start_completion(select_first=False)
 
         # Map lexer classes to the active theme.
         t = ui.theme()
@@ -110,9 +127,11 @@ def _prompt() -> str:
             ),
             completer=SlashCompleter(),
             complete_while_typing=True,
+            complete_style=CompleteStyle.MULTI_COLUMN,
             history=history,
             lexer=SuperTonLexer(),
             style=pt_style,
+            key_bindings=bindings,
         )
     except (ImportError, ValueError):
         return input(f"{ui.theme().prompt_glyph} ")
