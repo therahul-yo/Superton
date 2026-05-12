@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import time
+from pathlib import Path
 
 from rich.console import Console
 from rich.live import Live
@@ -142,6 +143,31 @@ def mascot_frame(t: float = 0.0) -> Text:
     return out
 
 
+def _load_mascot_art() -> str:
+    """Load the verbatim ASCII art mascot from assets/mascot.txt.
+
+    The file ships alongside the package (see pyproject.toml's force-include
+    list). Blank leading/trailing lines are trimmed so callers only pay for
+    the inked rows.
+    """
+    path = Path(__file__).resolve().parent / "assets" / "mascot.txt"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    lines = text.splitlines()
+    start = 0
+    while start < len(lines) and not lines[start].strip():
+        start += 1
+    end = len(lines)
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return "\n".join(lines[start:end])
+
+
+_MASCOT_ART: str | None = None
+
+
 def mini_mascot(
     *,
     core: str = "#0A0A12",
@@ -150,53 +176,25 @@ def mini_mascot(
     bright: str = "#FFF4A8",
     glow: str = "#B024F2",
 ) -> Text:
-    """A compact four-row themed black hole mascot (30 columns wide).
+    """Return the themed detailed black-hole mascot.
 
-    Designed to read as a SMOOTH image in the terminal rather than a pile
-    of pixels. We intentionally avoid heavy half-blocks (▄▀) — they create
-    stair-stepped edges that read as blocky. Instead we use the shaded-block
-    ramp ░▒▓█ with ▓ for 'soft' regions, which gives much gentler
-    gradients in any monospace font.
+    We use the verbatim ASCII art supplied in assets/mascot.txt (a
+    density-shaded rendering of the SuperTon brand image, ~135 cols
+    wide) rather than generating block-art on the fly. Callers that
+    used to tune block palettes still pass the full palette; we use
+    the brightest color (``bright``) as the primary ink since the art
+    self-shades through character density.
 
-    Shape (matches the SuperTon brand image):
-        row 1 — dome top:    narrow dark core with warm rim gradients
-        row 2 — upper disk:  dome continues through, disk flares out
-        row 3 — widest disk: the brightest, flattest line (no dome)
-        row 4 — underglow:   cool violet glow beneath the disk
+    `core` / `rim` / `edge` / `glow` are accepted for API compatibility
+    but unused — the kept palette makes each theme's mascot inherit the
+    theme's accent via `bright`.
     """
+    _ = (core, rim, edge, glow)  # intentionally unused — art is self-shading
+    global _MASCOT_ART
+    if _MASCOT_ART is None:
+        _MASCOT_ART = _load_mascot_art()
     t = Text()
-
-    # Row 1 — dome crown (narrow, dark core surrounded by warm gradient).
-    t.append("          ")                      # 10 sp
-    t.append("░▒▓", style=rim)                   # 3 fade-in rim
-    t.append("████", style=core)                 # 4 dark core
-    t.append("▓▒░", style=rim)                   # 3 fade-out rim
-    t.append("          \n")                    # 10 sp
-
-    # Row 2 — dome cuts through upper disk; disk flares out on either side.
-    t.append("      ")                           # 6 sp
-    t.append("░▒▓", style=edge)                  # 3 edge fade
-    t.append("████", style=bright)               # 4 bright disk left
-    t.append("▓▓▓▓", style=rim)                  # 4 dome/disk interface
-    t.append("████", style=bright)               # 4 bright disk right
-    t.append("▓▒░", style=edge)                  # 3 edge fade
-    t.append("      \n")                         # 6 sp
-
-    # Row 3 — widest disk line: no core, pure warm gradient
-    t.append("  ")                               # 2 sp
-    t.append("░▒▓", style=rim)                   # 3 rim fade in
-    t.append("████", style=edge)                 # 4 edge
-    t.append("████████████", style=bright)       # 12 brightest middle
-    t.append("████", style=edge)                 # 4 edge
-    t.append("▓▒░", style=rim)                   # 3 rim fade out
-    t.append("  \n")                             # 2 sp
-
-    # Row 4 — soft violet underglow fading outward.
-    t.append("       ")                          # 7 sp
-    t.append("░▒▓", style=glow)                  # 3 glow fade in
-    t.append("▓▓▓▓▓▓▓▓▓▓", style=glow)           # 10 main glow
-    t.append("▓▒░", style=glow)                  # 3 glow fade out
-    t.append("       \n")                        # 7 sp
+    t.append(_MASCOT_ART, style=bright)
     return t
 
 

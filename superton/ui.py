@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from rich import box
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -471,8 +471,8 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(str(cwd), style=_current.muted)
 
     _console.print()
-    content = Group(themed_mini_mascot(), Text(""), body)
-    panel(content, width=min(_console.width - 2, 74), anchor=True)
+    _console.print(themed_mini_mascot(), justify="center")
+    panel(body, width=min(_console.width - 2, 74), anchor=True)
     _console.print()
 
 
