@@ -1,0 +1,29 @@
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# tooling
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# superton local data
+*.sqlite
+*.sqlite-journal
+palace/
