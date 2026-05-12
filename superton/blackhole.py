@@ -150,42 +150,53 @@ def mini_mascot(
     bright: str = "#FFF4A8",
     glow: str = "#B024F2",
 ) -> Text:
-    """A compact four-row themed black hole mascot (22 columns wide).
+    """A compact four-row themed black hole mascot (30 columns wide).
 
-    Modeled on the SuperTon brand image:
-        row 1 — the dark dome sitting above the disk
-        row 2 — the upper rim of the disk cutting across the dome
-        row 3 — the widest, brightest line of the accretion disk
-        row 4 — the cool underglow beneath the disk
+    Designed to read as a SMOOTH image in the terminal rather than a pile
+    of pixels. We intentionally avoid heavy half-blocks (▄▀) — they create
+    stair-stepped edges that read as blocky. Instead we use the shaded-block
+    ramp ░▒▓█ with ▓ for 'soft' regions, which gives much gentler
+    gradients in any monospace font.
 
-    All colors are themeable so each CLI theme gets its own mascot palette.
+    Shape (matches the SuperTon brand image):
+        row 1 — dome top:    narrow dark core with warm rim gradients
+        row 2 — upper disk:  dome continues through, disk flares out
+        row 3 — widest disk: the brightest, flattest line (no dome)
+        row 4 — underglow:   cool violet glow beneath the disk
     """
     t = Text()
-    # Row 1 — dome top (dark core only)
-    t.append("        ")
-    t.append("▄▄██▄▄", style=core)
-    t.append("        \n")
-    # Row 2 — upper disk ring cutting across the dome
-    t.append("     ")
-    t.append("▗▄", style=rim)
-    t.append("▟██████▙", style=edge)
-    t.append("▄▗", style=rim)
-    t.append("     \n")
-    # Row 3 — widest, brightest disk line with core still cutting through
-    t.append("▄▄", style=rim)
-    t.append("████", style=edge)
-    t.append("████", style=bright)
-    t.append("██", style=core)
-    t.append("████", style=bright)
-    t.append("████", style=edge)
-    t.append("▄▄", style=rim)
-    t.append("\n")
-    # Row 4 — violet underglow
-    t.append("    ")
-    t.append("▀▀▀", style=glow)
-    t.append("████████", style=glow)
-    t.append("▀▀▀", style=glow)
-    t.append("    \n")
+
+    # Row 1 — dome crown (narrow, dark core surrounded by warm gradient).
+    t.append("          ")                      # 10 sp
+    t.append("░▒▓", style=rim)                   # 3 fade-in rim
+    t.append("████", style=core)                 # 4 dark core
+    t.append("▓▒░", style=rim)                   # 3 fade-out rim
+    t.append("          \n")                    # 10 sp
+
+    # Row 2 — dome cuts through upper disk; disk flares out on either side.
+    t.append("      ")                           # 6 sp
+    t.append("░▒▓", style=edge)                  # 3 edge fade
+    t.append("████", style=bright)               # 4 bright disk left
+    t.append("▓▓▓▓", style=rim)                  # 4 dome/disk interface
+    t.append("████", style=bright)               # 4 bright disk right
+    t.append("▓▒░", style=edge)                  # 3 edge fade
+    t.append("      \n")                         # 6 sp
+
+    # Row 3 — widest disk line: no core, pure warm gradient
+    t.append("  ")                               # 2 sp
+    t.append("░▒▓", style=rim)                   # 3 rim fade in
+    t.append("████", style=edge)                 # 4 edge
+    t.append("████████████", style=bright)       # 12 brightest middle
+    t.append("████", style=edge)                 # 4 edge
+    t.append("▓▒░", style=rim)                   # 3 rim fade out
+    t.append("  \n")                             # 2 sp
+
+    # Row 4 — soft violet underglow fading outward.
+    t.append("       ")                          # 7 sp
+    t.append("░▒▓", style=glow)                  # 3 glow fade in
+    t.append("▓▓▓▓▓▓▓▓▓▓", style=glow)           # 10 main glow
+    t.append("▓▒░", style=glow)                  # 3 glow fade out
+    t.append("       \n")                        # 7 sp
     return t
 
 
@@ -233,18 +244,6 @@ class BlackHole:
     def __exit__(self, *exc) -> None:
         if self._live:
             self._live.__exit__(*exc)
-
-
-def play_boot(console: Console, duration: float = 1.6) -> None:
-    """Play the boot animation for `duration` seconds, then exit."""
-    fps = 24
-    end = time.time() + duration
-    with Live(console=console, refresh_per_second=fps, transient=False) as live:
-        while time.time() < end:
-            t = time.time()
-            live.update(render_frame(t))
-            time.sleep(1 / fps)
-        live.update(render_frame(time.time()))
 
 
 def static_frame() -> Text:
