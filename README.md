@@ -219,6 +219,30 @@ Inside the shell, `/clear` resets the conversation, `/theme <name>` swaps the
 palette, and `/model <profile>` switches Miniton's base model with a brief
 confirmation flash.
 
+## Web Puller
+
+SuperTon includes a native web puller (inspired by
+[webpull](https://github.com/Dhravya/webpull)) that can ingest any public
+website directly into your palace — no external tools required.
+
+```bash
+# Single page
+superton add https://paulgraham.com/great.html
+
+# Full site crawl
+superton pull https://docs.example.com --max 200 --wing docs
+
+# SPA with JavaScript rendering (requires: pip install 'superton[web]')
+superton pull https://my-spa.dev --render-js
+```
+
+Features:
+- Sitemap.xml discovery + BFS crawl fallback
+- Parallel fetching (configurable concurrency)
+- trafilatura content extraction (articles, docs, blogs)
+- Optional Playwright Chromium for JS-rendered SPAs
+- Pages stream directly into your palace as searchable drawers
+
 ## Commands
 
 | Command | Purpose |
