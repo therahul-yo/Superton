@@ -193,9 +193,9 @@ footer .lines a:hover{color:var(--plasma-hot)}
 </head>
 <body>
 
-<video class="bg-video" autoplay muted loop playsinline preload="auto" poster="assets/ascii-bg-poster.jpg" aria-hidden="true">
-  <source src="assets/ascii-bg.webm" type="video/webm" />
+<video class="bg-video" autoplay muted loop playsinline disableremoteplayback preload="auto" poster="assets/ascii-bg-poster.jpg" aria-hidden="true">
   <source src="assets/ascii-bg.mp4" type="video/mp4" />
+  <source src="assets/ascii-bg.webm" type="video/webm" />
 </video>
 <div class="bg-veil" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
@@ -385,6 +385,28 @@ footer .lines a:hover{color:var(--plasma-hot)}
 </footer>
 
 <script>
+/* --- force-play backdrop video ------------------------------------------- */
+(function(){
+  const v = document.querySelector('.bg-video');
+  if(!v) return;
+  v.muted = true;
+  v.playsInline = true;
+  const tryPlay = ()=>{
+    const p = v.play();
+    if(p && typeof p.catch === 'function'){
+      p.catch(()=>{
+        // Safari/Chrome sometimes block until first user gesture — wire that.
+        const unlock = ()=>{ v.play().catch(()=>{}); document.removeEventListener('pointerdown', unlock); document.removeEventListener('keydown', unlock); };
+        document.addEventListener('pointerdown', unlock, {once:true});
+        document.addEventListener('keydown', unlock, {once:true});
+      });
+    }
+  };
+  if(v.readyState >= 2) tryPlay();
+  else v.addEventListener('loadeddata', tryPlay, {once:true});
+  v.addEventListener('canplay', tryPlay, {once:true});
+})();
+
 /* --- copy-to-clipboard ---------------------------------------------------- */
 function copyCmd(cmd, el){
   navigator.clipboard?.writeText(cmd).catch(()=>{});
