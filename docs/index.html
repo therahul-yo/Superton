@@ -25,6 +25,7 @@
   --rule-strong:rgba(255,255,255,.22);
 }
 *{box-sizing:border-box;margin:0;padding:0}
+em,i{font-style:normal}
 html{background:var(--void);scroll-behavior:smooth}
 body{
   background:var(--void);color:var(--paper-dim);
@@ -54,8 +55,8 @@ a:hover{color:var(--ember);border-color:var(--ember)}
 
 .left .caption{position:absolute;left:32px;right:32px;bottom:32px;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;font-family:"OffBit","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.32em;text-transform:uppercase;color:var(--paper-dim)}
 .left .caption b{display:block;color:var(--ember);font-weight:700;font-size:9px;letter-spacing:.38em;margin-bottom:6px}
-.left .caption .title{font-family:"OffBit Dot","OffBit",sans-serif;font-weight:500;font-size:18px;letter-spacing:-.005em;text-transform:none;color:var(--paper)}
-.left .topmark{position:absolute;top:32px;left:32px;display:flex;align-items:center;gap:10px;font-family:"OffBit Dot","OffBit",sans-serif;font-weight:500;font-size:18px;color:var(--paper)}
+.left .caption .title{font-family:"OffBit",sans-serif;font-weight:500;font-size:18px;letter-spacing:-.005em;text-transform:none;color:var(--paper)}
+.left .topmark{position:absolute;top:32px;left:32px;display:flex;align-items:center;gap:10px;font-family:"OffBit",sans-serif;font-weight:500;font-size:18px;color:var(--paper)}
 .left .topmark .dot{width:7px;height:7px;background:var(--ember);border-radius:50%;display:inline-block}
 
 .right{margin-right:50vw;min-height:100vh;background:var(--void);position:relative;z-index:1}
@@ -76,7 +77,7 @@ a:hover{color:var(--ember);border-color:var(--ember)}
 .eyebrow .dot{width:5px;height:5px;background:var(--ember);border-radius:50%;animation:pulse 2.6s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.35}}
 
-h1.title{font-family:"OffBit Dot","OffBit",sans-serif;font-weight:400;font-size:clamp(48px,6.4vw,76px);line-height:.98;letter-spacing:-.035em;color:var(--paper);margin-bottom:32px}
+h1.title{font-family:"OffBit",sans-serif;font-weight:400;font-size:clamp(48px,6.4vw,76px);line-height:.98;letter-spacing:-.035em;color:var(--paper);margin-bottom:32px}
 h1.title em{color:var(--ember);font-weight:400}
 
 .tagline{font-size:14.5px;line-height:1.75;color:var(--paper-dim);margin-bottom:40px;max-width:46ch}
@@ -94,7 +95,7 @@ section{padding:64px 0;border-bottom:1px solid var(--rule)}
 section:last-of-type{border-bottom:0}
 .section-label{font-family:"OffBit","JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:28px;display:flex;align-items:center;gap:12px}
 .section-label::before{content:"";display:block;width:18px;height:1px;background:var(--ember)}
-.section-title{font-family:"OffBit Dot","OffBit",sans-serif;font-weight:400;font-size:clamp(22px,2.8vw,30px);line-height:1.2;letter-spacing:-.02em;color:var(--paper);margin-bottom:36px;max-width:32ch}
+.section-title{font-family:"OffBit",sans-serif;font-weight:400;font-size:clamp(22px,2.8vw,30px);line-height:1.2;letter-spacing:-.02em;color:var(--paper);margin-bottom:36px;max-width:32ch}
 
 /* --- install ---------------------------------------------------------- */
 .steps{display:flex;flex-direction:column;gap:24px}
@@ -126,13 +127,13 @@ section:last-of-type{border-bottom:0}
 /* --- tenets ----------------------------------------------------------- */
 .tenets{display:flex;flex-direction:column;gap:24px}
 .tenet{display:grid;grid-template-columns:40px 1fr;gap:18px;align-items:baseline}
-.tenet .n{font-family:"OffBit Dot","OffBit",sans-serif;font-weight:500;color:var(--ember);font-size:18px}
-.tenet h3{font-family:"OffBit Dot","OffBit",sans-serif;font-weight:400;font-size:17px;color:var(--paper);margin-bottom:4px;letter-spacing:-.005em}
+.tenet .n{font-family:"OffBit",sans-serif;font-weight:500;color:var(--ember);font-size:18px}
+.tenet h3{font-family:"OffBit",sans-serif;font-weight:400;font-size:17px;color:var(--paper);margin-bottom:4px;letter-spacing:-.005em}
 .tenet p{font-size:12.5px;color:var(--paper-dim);line-height:1.7}
 
 /* --- footer ----------------------------------------------------------- */
 .foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding-top:60px;font-family:"OffBit","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--paper-faint)}
-.foot .mark{font-family:"OffBit Dot","OffBit",sans-serif;font-weight:400;font-size:13px;letter-spacing:-.005em;color:var(--paper);text-transform:none}
+.foot .mark{font-family:"OffBit",sans-serif;font-weight:400;font-size:13px;letter-spacing:-.005em;color:var(--paper);text-transform:none}
 .foot a{color:var(--paper-dim);border:0}
 .foot a:hover{color:var(--ember)}
 
