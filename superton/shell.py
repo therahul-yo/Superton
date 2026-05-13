@@ -651,15 +651,10 @@ def run() -> None:
                 status.refresh(cfg)
                 continue
             if text == "/doctor":
-                s = mem.stats()
+                from superton.doctor import render_doctor_report
+
                 ui.blank()
-                ui.kv([
-                    ("home", str(cfg.home)),
-                    ("model", f"{cfg.model_profile} · {cfg.base_model}"),
-                    ("memory", f"{s['backend']} · {s['drawers']} drawers"),
-                    ("semantic", "on" if s["semantic_enabled"] else "off"),
-                    ("theme", f"{cfg.theme} · {ui.theme().label}"),
-                ])
+                render_doctor_report(cfg)
                 ui.blank()
                 continue
             if text == "/sources":
