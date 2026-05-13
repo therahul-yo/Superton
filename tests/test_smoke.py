@@ -110,7 +110,7 @@ def test_shell_greeting_does_not_dump_memory(cfg: Config, capsys: pytest.Capture
     from superton.shell import _answer
 
     class FakeModel:
-        def generate(self, prompt, system=None):
+        def generate(self, prompt, system=None, history=None):
             assert "raw readme chunk" not in prompt
             yield "model-generated hello"
 
@@ -128,7 +128,7 @@ def test_shell_model_error_fallback_is_summary(cfg: Config, capsys: pytest.Captu
     from superton.shell import _answer
 
     class BrokenModel:
-        def generate(self, prompt, system=None):
+        def generate(self, prompt, system=None, history=None):
             raise ModelError("no backend")
 
     mem = Memory(cfg)
@@ -144,7 +144,7 @@ def test_shell_personal_query_refuses_weak_matches(cfg: Config, capsys: pytest.C
     from superton.shell import _answer
 
     class FakeModel:
-        def generate(self, prompt, system=None):
+        def generate(self, prompt, system=None, history=None):
             yield "should not be used"
 
     mem = Memory(cfg)

@@ -12,6 +12,21 @@ from superton.model import Model, ModelError
 console = ui.console()
 
 GREETINGS = {"hi", "hey", "hello", "yo", "sup"}
+
+# Questions about the assistant itself. Matching one of these means we should
+# NOT retrieve (random drawers only add noise) and should NOT include
+# conversation history (the 1.5B model otherwise pattern-matches on the
+# previous reply and repeats it verbatim).
+META_PHRASES = (
+    "what are you", "what r u", "what are u",
+    "who are you", "who r u", "who are u",
+    "what can you do", "what do you do",
+    "what is your use", "what is ur use", "whats your use", "whats ur use",
+    "tell me about yourself", "introduce yourself",
+    "what is this", "whats this", "wats this",
+    "how do you work", "how does this work",
+    "what r u for", "what are u for",
+)
 STOPWORDS = {
     "a", "about", "an", "and", "are", "from", "give", "gimme", "how", "i",
     "in", "is", "it", "me", "my", "of", "on", "the", "this", "to", "u",
@@ -401,9 +416,19 @@ def _format_suggestions(raw_hits, limit: int = 2) -> str:
     return "\n".join(lines)
 
 
-def _should_retrieve(question: str) -> bool:
+def _is_meta_question(question: str) -> bool:
+    """True if the message is a greeting or a question about the assistant
+    itself (not about the user's stored memory)."""
     normalized = question.lower().strip(" !?.")
-    return normalized not in GREETINGS
+    if normalized in GREETINGS:
+        return True
+    return any(phrase in normalized for phrase in META_PHRASES)
+
+
+def _should_retrieve(question: str) -> bool:
+    # Skip retrieval for greetings and meta-questions. Random drawers only
+    # confuse the small model on these.
+    return not _is_meta_question(question)
 
 
 def _build_system_prompt(*, has_drawers: bool) -> str:
@@ -431,10 +456,14 @@ def _build_system_prompt(*, has_drawers: bool) -> str:
             "- Keep answers under 8 lines unless the user asks for detail."
         )
     return (
-        "You are Miniton, a local assistant in the SuperTon CLI. No memory "
-        "drawers were retrieved for this message. Answer briefly and "
-        "conversationally as a regular local model. Keep answers under 6 "
-        "lines."
+        "You are Miniton — a small local AI assistant built into the "
+        "SuperTon CLI. You run entirely on the user's machine via Ollama "
+        "and answer questions grounded in their personal palace of memories "
+        "(notes, documents, past AI-tool conversations). No memory drawers "
+        "were retrieved for this message, so answer briefly and "
+        "conversationally as a normal assistant. If asked who you are or "
+        "what you do, give a short one-paragraph self-introduction. Keep "
+        "answers under 6 lines."
     )
 
 
@@ -515,28 +544,27 @@ def _answer(
         for h in hits[:3]
     )
     system = _build_system_prompt(has_drawers=bool(hits))
-    history_text = _format_history(history or [])
+    if _is_meta_question(question):
+        # For greetings and 'what are you' style questions, hand the model a
+        # clean slate: no drawers (already empty), no history. Otherwise the
+        # small model pattern-matches on its previous reply and repeats it.
+        chat_history: list[dict[str, str]] = []
+    else:
+        chat_history = [
+            {"role": "user" if role == "user" else "assistant", "content": text}
+            for role, text in (history or [])[-CONVERSATION_WINDOW * 2:]
+        ]
     if hits:
-        parts = []
-        if history_text:
-            parts.append(f"Recent conversation:\n{history_text}")
-        parts.append(f"Memory drawers:\n\n{context}")
-        parts.append(f"User message: {question}")
+        parts = [f"Memory drawers:\n\n{context}", f"User message: {question}"]
         parts.append("Write a concise answer, not a dump of the context.")
         prompt = "\n\n".join(parts)
     else:
-        parts = []
-        if history_text:
-            parts.append(f"Recent conversation:\n{history_text}")
-        parts.append("No memory drawers were retrieved for this message.")
-        parts.append(f"User message: {question}")
-        parts.append("Answer naturally and concisely.")
-        prompt = "\n\n".join(parts)
+        prompt = question
     try:
         def generate_answer():
             if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
                 model.start_ollama(timeout=5.0)
-            yield from model.generate(prompt, system=system)
+            yield from model.generate(prompt, system=system, history=chat_history)
 
         answer = ui.stream_answer(generate_answer())
     except ModelError:

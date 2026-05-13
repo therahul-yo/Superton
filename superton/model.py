@@ -106,8 +106,13 @@ class Model:
             time.sleep(0.5)
         return False
 
-    def generate(self, prompt: str, system: str | None = None) -> Iterator[str]:
-        """Stream tokens from Miniton."""
+    def generate(
+        self,
+        prompt: str,
+        system: str | None = None,
+        history: list[dict[str, str]] | None = None,
+    ) -> Iterator[str]:
+        """Stream tokens from Miniton via /api/chat (structured messages)."""
         backend = self.backend()
         if backend == "huggingface":
             yield from self._generate_huggingface(prompt, system=system)
@@ -115,22 +120,24 @@ class Model:
         if backend != "ollama":
             raise ModelError("no model backend available: start Ollama or set HF_TOKEN")
 
-        payload = {
-            "model": self.cfg.model,
-            "prompt": prompt,
-            "stream": True,
-        }
+        messages: list[dict[str, str]] = []
         if system:
-            payload["system"] = system
+            messages.append({"role": "system", "content": system})
+        for msg in history or []:
+            messages.append(msg)
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {"model": self.cfg.model, "messages": messages, "stream": True}
         try:
-            with self._client.stream("POST", "/api/generate", json=payload) as r:
+            with self._client.stream("POST", "/api/chat", json=payload) as r:
                 r.raise_for_status()
                 for line in r.iter_lines():
                     if not line:
                         continue
                     chunk = json.loads(line)
-                    if "response" in chunk:
-                        yield chunk["response"]
+                    delta = chunk.get("message", {}).get("content", "")
+                    if delta:
+                        yield delta
                     if chunk.get("done"):
                         break
         except httpx.HTTPError as e:
