@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from superton.ingest import CHUNK_SIZE, chunk_text
 from superton.memory import Memory
 
 
@@ -54,14 +55,19 @@ class ChatGPTImporter:
                 text = _message_text(msg.get("content") or {})
                 if not text.strip():
                     continue
-                self.memory.add(
-                    text=f"[{role}] {text}",
-                    source=source,
-                    wing="chatgpt",
-                    room=title[:80],
-                    metadata={"role": role, "conversation": title},
-                )
-                added += 1
+                body = f"[{role}] {text}"
+                # Long turns (pasted docs, big tool outputs) embed poorly as
+                # one drawer — chunk so each piece stays focused.
+                pieces = [body] if len(body) <= CHUNK_SIZE else list(chunk_text(body))
+                for piece in pieces:
+                    self.memory.add(
+                        text=piece,
+                        source=source,
+                        wing="chatgpt",
+                        room=title[:80],
+                        metadata={"role": role, "conversation": title},
+                    )
+                    added += 1
             if added:
                 conversations += 1
                 drawers += added

@@ -63,9 +63,9 @@ def _query_terms(query: str) -> set[str]:
 def _path_tokens(source: str) -> set[str]:
     """Tokens drawn from the source filename stem (not the directory path).
 
-    We only look at the final path component so that `/Users/rahul/...` paths
+    We only look at the final path component so that absolute paths embedded
     in transcript logs do not give every random drawer a free boost on
-    queries that mention 'rahul'.
+    queries that happen to mention a directory name.
     """
     if not source:
         return set()
@@ -83,8 +83,14 @@ class Memory:
         self.cfg = cfg
         self.cfg.palace_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.cfg.palace_dir / "drawers.sqlite"
-        self._db = sqlite3.connect(self.db_path)
+        self._db = sqlite3.connect(self.db_path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
+        # WAL lets readers and writers proceed concurrently — required once the
+        # MCP server starts serving search while ingest is still running.
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute("PRAGMA synchronous=NORMAL")
+        self._db.execute("PRAGMA temp_store=MEMORY")
+        self._db.execute("PRAGMA busy_timeout=5000")
         self._semantic_collection: Any | None = None
         self._semantic_error: str | None = None
         self._init_schema()
@@ -269,7 +275,7 @@ class Memory:
                 if overlap:
                     score += min(0.35, 0.12 + 0.08 * len(overlap))
             hits.append(SearchHit(drawer=drawer, score=score))
-        # When the query strongly names a file (e.g. "rahul resume"), the
+        # When the query strongly names a file (e.g. "project resume"), the
         # semantic retriever sometimes drops the actual document out of the
         # candidate pool because noisy file-listing drawers score higher.
         # Pull any source-name matches directly from SQLite and merge them
@@ -415,10 +421,16 @@ class Memory:
         if col is None:
             return 0
 
-        rows = self.all(limit=1_000_000)
         total = 0
-        for start in range(0, len(rows), batch_size):
-            batch = rows[start : start + batch_size]
+        cur = self._db.execute(
+            "SELECT * FROM drawers ORDER BY created_at DESC"
+        )
+        batch: list[Drawer] = []
+        while True:
+            rows = cur.fetchmany(batch_size)
+            if not rows:
+                break
+            batch = [self._row_to_drawer(r) for r in rows]
             ids = [d.id for d in batch]
             documents = [d.text for d in batch]
             metadatas = [

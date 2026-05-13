@@ -242,11 +242,11 @@ def _looks_memory_specific(query: str) -> bool:
     normalized = query.lower()
     personal_markers = (
         "resume", "resue", "cv", "pdf", "document", "file",
-        "from my", "from his", "fromhis", "rahul",
+        "from my", "from his", "fromhis",
     )
     if any(marker in normalized for marker in personal_markers):
         return True
-    return "project" in normalized and ("my" in normalized or "rahul" in normalized)
+    return "project" in normalized and "my" in normalized
 
 
 def _relevant_hits(question: str, hits):
@@ -431,13 +431,27 @@ def _format_suggestions(raw_hits, limit: int = 2) -> str:
 
 def _is_meta_question(question: str) -> bool:
     """True if the message is a greeting or a question about the assistant
-    itself (not about the user's stored memory)."""
+    itself (not about the user's stored memory).
+
+    We require an exact or near-exact phrase match. A loose substring check
+    silently swallows real memory queries like "what is this file" because
+    they contain "what is this".
+    """
     normalized = question.lower().strip(" !?.")
     if normalized in GREETINGS:
         return True
     # Normalize common typos word-by-word before phrase matching
     fixed = " ".join(_TYPO_MAP.get(w, w) for w in normalized.split())
-    return any(phrase in fixed for phrase in META_PHRASES)
+    for phrase in META_PHRASES:
+        if fixed == phrase:
+            return True
+        # Allow a small amount of trailing filler ("what are you exactly")
+        # but never enough that a follow-on noun like "file" or "document"
+        # could sneak in. Cap at +1 token beyond the phrase length.
+        phrase_len = len(phrase.split())
+        if fixed.startswith(phrase + " ") and len(fixed.split()) <= phrase_len + 1:
+            return True
+    return False
 
 
 def _should_retrieve(question: str) -> bool:
@@ -501,7 +515,7 @@ def _contextualize_query(question: str, history: list[tuple[str, str]] | None) -
     """For short follow-up questions, prepend the most recent user turn so
     retrieval stays on the current conversation topic.
 
-    Without this, 'check pdf source' after 'rahul resume memory' re-runs
+    Without this, 'check pdf source' after 'my resume memory' re-runs
     semantic search against only 'check pdf source' and typically pulls
     unrelated Claude Code file-listing drawers.
     """
@@ -533,7 +547,7 @@ def _answer(
     search_query = _contextualize_query(question, history)
     raw_hits = mem.search(search_query, limit=8) if _should_retrieve(question) else []
     hits = _relevant_hits(question, raw_hits)
-    # For memory-specific queries (resume, "rahul", document, etc.) we refuse
+    # For memory-specific queries (resume, document, etc.) we refuse
     # when no retrieved drawer shares even a single meaningful token with the
     # query. This keeps Miniton from confabulating an answer from drawers
     # that were semantically nearby but talk about something unrelated.
