@@ -23,7 +23,7 @@
   --rule-strong:rgba(255,255,255,.22);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html{background:var(--void)}
+html{background:var(--void);scroll-behavior:smooth}
 body{
   background:var(--void);color:var(--paper-dim);
   font-family:"JetBrains Mono",ui-monospace,monospace;font-size:14px;line-height:1.7;
@@ -64,7 +64,7 @@ a:hover{color:var(--ember);border-color:var(--ember)}
 /* --- right column shell ------------------------------------------------ */
 .right-inner{max-width:560px;padding:96px 56px 80px;position:relative;z-index:2}
 
-.topnav{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:24px 56px;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.32em;text-transform:uppercase;color:var(--paper-faint);border-bottom:1px solid var(--rule)}
+.topnav{position:absolute;top:0;left:0;right:0;z-index:4;display:flex;justify-content:space-between;align-items:center;padding:24px 56px;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.32em;text-transform:uppercase;color:var(--paper-faint);border-bottom:1px solid var(--rule);background:linear-gradient(to bottom, rgba(0,0,0,.6), transparent)}
 .topnav a{color:var(--paper-dim);border:0}
 .topnav a:hover{color:var(--ember)}
 
