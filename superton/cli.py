@@ -438,11 +438,42 @@ def init(
 
 @app.command()
 def add(
-    path: Path = typer.Argument(..., exists=True, help="file or directory to ingest"),
+    target: str = typer.Argument(..., help="file, directory, or http(s) URL to ingest"),
     wing: str = typer.Option("default", "--wing", "-w"),
     room: str = typer.Option("default", "--room", "-r"),
 ) -> None:
-    """Ingest a file or directory into the palace."""
+    """Ingest a file, directory, or single URL into the palace."""
+    import asyncio
+
+    # URL branch — single-page web ingest.
+    if target.startswith(("http://", "https://")):
+        cfg = _cfg()
+        mem = Memory(cfg)
+        ui.section("add", f"{target}  → wing={wing} room={room}")
+        with ui.spinner(f"fetching {target}"):
+            from superton.puller import pull_url
+
+            page = asyncio.run(pull_url(target))
+        if page is None:
+            ui.warn("could not extract content from URL")
+            mem.close()
+            return
+        from superton.ingest import chunk_text
+
+        drawers = 0
+        for chunk in chunk_text(page.markdown):
+            mem.add(text=chunk, source=target, wing=wing, room=room)
+            drawers += 1
+        mem.close()
+        ui.blank()
+        ui.ok(f"ingested {drawers} drawers", f"from {target}")
+        return
+
+    # File/directory branch — existing behavior.
+    path = Path(target).expanduser()
+    if not path.exists():
+        ui.err(f"not found: {target}")
+        raise typer.Exit(1)
     cfg = _cfg()
     mem = Memory(cfg)
     ui.section("add", f"{path}  → wing={wing} room={room}")
@@ -450,6 +481,56 @@ def add(
     mem.close()
     ui.blank()
     ui.ok(f"ingested {total_drawers} drawers", f"from {files} file(s)")
+
+
+@app.command()
+def pull(
+    url: str = typer.Argument(..., help="base URL of the site to pull"),
+    max_pages: int = typer.Option(100, "--max", "-m", help="max pages to pull"),
+    wing: str = typer.Option("default", "--wing", "-w"),
+    room: str = typer.Option("default", "--room", "-r"),
+    render_js: bool = typer.Option(False, "--render-js", help="use Playwright for JS-rendered sites"),
+    concurrency: int = typer.Option(8, "--concurrency", "-c"),
+) -> None:
+    """Pull an entire website into the palace as markdown drawers.
+
+    Discovers pages via sitemap.xml, navigation links, or BFS crawling,
+    then fetches and extracts each page in parallel. Content is converted
+    to clean markdown via trafilatura and ingested directly as drawers.
+
+    Equivalent to webpull but native Python, no Bun/Node required.
+    """
+    import asyncio
+
+    from superton.ingest import chunk_text
+    from superton.puller import pull_site
+
+    cfg = _cfg()
+    mem = Memory(cfg)
+    ui.section("pull", f"{url}  → max={max_pages} wing={wing} room={room}")
+
+    total_pages = 0
+    total_drawers = 0
+
+    async def _run() -> None:
+        nonlocal total_pages, total_drawers
+        async for page in pull_site(
+            url,
+            max_pages=max_pages,
+            render_js=render_js,
+            concurrency=concurrency,
+        ):
+            total_pages += 1
+            for chunk in chunk_text(page.markdown):
+                mem.add(text=chunk, source=page.url, wing=wing, room=room)
+                total_drawers += 1
+
+    with ui.spinner(f"pulling {url}"):
+        asyncio.run(_run())
+
+    mem.close()
+    ui.blank()
+    ui.ok(f"pulled {total_pages} pages → {total_drawers} drawers")
 
 
 @app.command()

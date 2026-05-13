@@ -47,6 +47,18 @@ def render_doctor_report(cfg: Config) -> None:
     except Exception as e:
         row("mempalace", False, str(e))
 
+    try:
+        import trafilatura
+        row("trafilatura", True, getattr(trafilatura, "__version__", "installed"))
+    except ImportError:
+        row("trafilatura", False, "missing — run: pip install trafilatura")
+
+    try:
+        import playwright
+        row("playwright", True, getattr(playwright, "__version__", "installed"))
+    except ImportError:
+        row("playwright", False, "optional — run: pip install 'superton[web]'")
+
     ollama_bin = shutil.which("ollama")
     row("ollama binary", ollama_bin is not None, ollama_bin or "missing")
 
