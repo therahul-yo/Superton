@@ -2,7 +2,7 @@
 
 # SuperTon
 
-> A tiny local LLM with infinite memory. Your second brain that never forgets.
+> A local memory palace for your scattered notes, docs, and AI chats — searchable, grounded, and 100% yours.
 
 [![CI](https://github.com/therahul-yo/Superton/actions/workflows/ci.yml/badge.svg)](https://github.com/therahul-yo/Superton/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)

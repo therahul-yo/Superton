@@ -13,18 +13,46 @@ MODEL_PROFILES = {
         "base_model": "qwen2.5:1.5b-instruct",
         "hf_model": "Qwen/Qwen2.5-1.5B-Instruct",
         "label": "fast · 1.5B · lowest memory",
+        "download_gb": 1.0,
+        "min_ram_gb": 4,
     },
     "better": {
         "base_model": "qwen2.5:3b-instruct",
         "hf_model": "Qwen/Qwen2.5-3B-Instruct",
         "label": "better · 3B · stronger answers",
+        "download_gb": 2.0,
+        "min_ram_gb": 8,
     },
     "strong": {
         "base_model": "qwen2.5:7b-instruct",
         "hf_model": "Qwen/Qwen2.5-7B-Instruct",
         "label": "strong · 7B · best local quality",
+        "download_gb": 4.7,
+        "min_ram_gb": 16,
     },
 }
+
+
+def detect_ram_gb() -> float | None:
+    """Best-effort host RAM in GB. Returns None if we can't tell."""
+    import platform
+    import subprocess
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            out = subprocess.check_output(
+                ["sysctl", "-n", "hw.memsize"], text=True, timeout=2
+            )
+            return int(out.strip()) / (1024 ** 3)
+        if system == "Linux":
+            with open("/proc/meminfo", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        kb = int(line.split()[1])
+                        return kb / (1024 ** 2)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return None
 
 
 def _home() -> Path:
