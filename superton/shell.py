@@ -11,7 +11,13 @@ from superton.model import Model, ModelError
 
 console = ui.console()
 
-GREETINGS = {"hi", "hey", "hello", "yo", "sup"}
+GREETINGS = {"hi", "hey", "hello", "yo", "sup", "hwy", "hye", "heey", "helo"}
+
+_TYPO_MAP = {
+    "waht": "what", "wut": "what", "wat": "what", "wha": "what",
+    "r": "are", "ur": "your", "u": "you", "ure": "your",
+    "teh": "the", "hwo": "how", "fo": "for",
+}
 
 # Questions about the assistant itself. Matching one of these means we should
 # NOT retrieve (random drawers only add noise) and should NOT include
@@ -422,7 +428,9 @@ def _is_meta_question(question: str) -> bool:
     normalized = question.lower().strip(" !?.")
     if normalized in GREETINGS:
         return True
-    return any(phrase in normalized for phrase in META_PHRASES)
+    # Normalize common typos word-by-word before phrase matching
+    fixed = " ".join(_TYPO_MAP.get(w, w) for w in normalized.split())
+    return any(phrase in fixed for phrase in META_PHRASES)
 
 
 def _should_retrieve(question: str) -> bool:
