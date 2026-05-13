@@ -11,6 +11,7 @@ lifetime so we don't pay the spin-up cost per page.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -99,13 +100,11 @@ async def render_page(url: str, *, timeout: float = 15.0) -> RenderedPage | None
         except Exception:
             return None
 
-        try:
+        with contextlib.suppress(Exception):
             await page.wait_for_selector(
                 "main, article, [class*='content'], [class*='docs'], h1, h2",
                 timeout=5000,
             )
-        except Exception:
-            pass
         await page.wait_for_timeout(500)
 
         html = await page.content()
@@ -119,15 +118,11 @@ async def close_browser() -> None:
     """Shut down the shared Chromium, idempotent."""
     global _browser, _context
     if _context is not None:
-        try:
+        with contextlib.suppress(Exception):
             await _context.close()
-        except Exception:
-            pass
     if _browser is not None:
-        try:
+        with contextlib.suppress(Exception):
             await _browser.close()
-        except Exception:
-            pass
     _context = None
     _browser = None
 

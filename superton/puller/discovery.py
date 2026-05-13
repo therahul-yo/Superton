@@ -256,7 +256,7 @@ async def _crawl(
     visited: set[str] = set()
     queue: list[str] = [base]
     found: list[str] = []
-    base_parsed = urlparse(base)
+    urlparse(base)
 
     while queue and len(found) < max_pages:
         batch_size = min(20, max_pages - len(found))

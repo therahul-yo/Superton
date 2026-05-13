@@ -1,9 +1,8 @@
 """Tests for the superton.puller package."""
-import pytest
-from superton.puller.detect import is_spa_shell, is_empty_content
-from superton.puller.extractor import extract, frontmatter, _extract_title
-from superton.puller.ua import get_random_ua, get_headers
+from superton.puller.detect import is_empty_content, is_spa_shell
+from superton.puller.extractor import _extract_title, extract, frontmatter
 from superton.puller.routes import extract_js_bundle_urls
+from superton.puller.ua import get_headers, get_random_ua
 
 
 def test_spa_detection_empty_shell():
