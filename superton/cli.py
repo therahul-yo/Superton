@@ -25,7 +25,7 @@ import typer
 
 from superton import __version__, ui
 from superton.blackhole import static_frame
-from superton.config import MODEL_PROFILES, Config, write_settings
+from superton.config import MODEL_PROFILES, Config, detect_ram_gb, write_settings
 from superton.ingest import chunk_text, read_file, walk
 from superton.memory import Memory
 from superton.model import Model, ModelError, OllamaError
@@ -92,6 +92,73 @@ def _render_modelfile(template: Path, cfg: Config) -> Path:
     rendered = build_dir / "Modelfile.miniton"
     rendered.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return rendered
+
+
+def _pick_model_profile(*, default: str = "fast") -> str:
+    """Interactive picker showing size + RAM-fit per profile."""
+    ram_gb = detect_ram_gb()
+    ui.blank()
+    ui.section("choose a model profile")
+    table = ui.make_table("profile", "size", "needs RAM", "notes")
+    rows: list[tuple[str, str]] = []
+    for name, data in MODEL_PROFILES.items():
+        fits = ram_gb is None or ram_gb >= data["min_ram_gb"]
+        marker = "●" if name == default else "○"
+        fit_tag = "" if fits else "  [red](too big for this Mac)[/]"
+        table.add_row(
+            f"{marker} {name}",
+            f"~{data['download_gb']:.1f} GB",
+            f"{data['min_ram_gb']} GB",
+            f"{data['label']}{fit_tag}",
+        )
+        rows.append((name, "fits" if fits else "tight"))
+    ui.print_table(table)
+    if ram_gb is not None:
+        ui.hint(f"detected RAM: {ram_gb:.1f} GB")
+    ui.blank()
+    while True:
+        choice = typer.prompt(
+            f"profile [{'/'.join(MODEL_PROFILES)}]",
+            default=default,
+        ).strip().lower()
+        if choice in MODEL_PROFILES:
+            return choice
+        ui.warn("pick one of: " + ", ".join(MODEL_PROFILES))
+
+
+def _offer_ollama_install(*, yes: bool) -> bool:
+    """Offer to install Ollama via brew (macOS) or the official installer (Linux).
+
+    Returns True if Ollama is on PATH after the attempt (or was already), False
+    if the user declined or the install failed.
+    """
+    if shutil.which("ollama") is not None:
+        return True
+    import platform
+    system = platform.system()
+    if system == "Darwin" and shutil.which("brew"):
+        cmd = ["brew", "install", "ollama"]
+        prompt = "Install Ollama via Homebrew?"
+    elif system == "Linux":
+        cmd = ["sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"]
+        prompt = "Install Ollama via the official installer (curl | sh)?"
+    else:
+        ui.hint("install Ollama manually: [link]https://ollama.com/download[/link]")
+        return False
+    ui.blank()
+    ui.panel(
+        f"Ollama is missing — needed to run Miniton locally.\n\n"
+        f"[{ui.theme().muted}]Will run: {' '.join(cmd)}[/]",
+        title="Install Ollama",
+        anchor=True,
+    )
+    if not yes and not typer.confirm(prompt, default=True):
+        return False
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        ui.warn("ollama install failed")
+        return False
+    return shutil.which("ollama") is not None
 
 
 def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
@@ -193,6 +260,14 @@ def welcome() -> None:
 def init(
     skip_model: bool = typer.Option(False, "--no-model", help="skip ollama model build"),
     yes: bool = typer.Option(False, "--yes", "-y", help="accept setup prompts"),
+    model_profile: str | None = typer.Option(
+        None, "--model", "-m",
+        help=f"model profile to set up: {', '.join(MODEL_PROFILES)}",
+    ),
+    theme: str | None = typer.Option(
+        None, "--theme", "-t",
+        help=f"CLI theme: {', '.join(ui.THEMES)}",
+    ),
 ) -> None:
     """Initialize the palace and build Miniton."""
     cfg = _cfg()
@@ -200,6 +275,38 @@ def init(
     cfg.palace_dir.mkdir(parents=True, exist_ok=True)
 
     ui.section("superton init", "palace + model setup")
+
+    # ---------------------------------------------------------------------
+    # Stage 0 — pick a model profile (interactive when not provided and the
+    # user didn't pass --yes, so first-run users see the size/RAM trade-off
+    # rather than silently getting qwen 1.5B).
+    # ---------------------------------------------------------------------
+    if model_profile is None and not yes and not skip_model:
+        try:
+            model_profile = _pick_model_profile(default=cfg.model_profile)
+        except (EOFError, KeyboardInterrupt):
+            model_profile = cfg.model_profile
+    if model_profile and model_profile not in MODEL_PROFILES:
+        ui.err("unknown model profile", "choose one of: " + ", ".join(MODEL_PROFILES))
+        raise typer.Exit(1)
+    if theme and theme not in ui.THEMES:
+        ui.err("unknown theme", "choose one of: " + ", ".join(ui.THEMES))
+        raise typer.Exit(1)
+    settings_update: dict[str, str] = {}
+    if model_profile and model_profile != cfg.model_profile:
+        selected = MODEL_PROFILES[model_profile]
+        settings_update.update(
+            model_profile=model_profile,
+            base_model=selected["base_model"],
+            hf_model=selected["hf_model"],
+        )
+    if theme and theme != cfg.theme:
+        settings_update["theme"] = theme
+    if settings_update:
+        write_settings(cfg.home, **settings_update)
+        cfg = Config.load()
+        if "theme" in settings_update:
+            ui.set_theme(cfg.theme)
 
     # ---------------------------------------------------------------------
     # Stage 1 — palace store
@@ -220,17 +327,19 @@ def init(
     with ui.stage("checking ollama"):
         if shutil.which("ollama") is None:
             ui.stage_warn("ollama not found in PATH")
-            ui.hint("install: [link]https://ollama.com/download[/link]")
-            if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"):
-                ui.stage_ok("Hugging Face fallback configured via HF_TOKEN")
-            else:
-                ui.hint(
-                    "fallback: set [bold]HF_TOKEN[/bold] and "
-                    "[bold]SUPERTON_MODEL_BACKEND=huggingface[/bold]"
-                )
-            ui.blank()
-            ui.next_steps_card(cfg)
-            return
+            installed = _offer_ollama_install(yes=yes)
+            if not installed:
+                if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"):
+                    ui.stage_ok("Hugging Face fallback configured via HF_TOKEN")
+                else:
+                    ui.hint(
+                        "fallback: set [bold]HF_TOKEN[/bold] and "
+                        "[bold]SUPERTON_MODEL_BACKEND=huggingface[/bold]"
+                    )
+                ui.blank()
+                ui.next_steps_card(cfg)
+                return
+            ui.stage_ok("ollama installed")
 
         model = Model(cfg)
         if not model.ollama_ready() and not model.start_ollama():

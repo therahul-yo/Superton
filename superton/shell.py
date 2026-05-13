@@ -43,6 +43,7 @@ COMMAND_HELP = {
     "/doctor": "show runtime health",
     "/forget-source": "remove all drawers from a source",
     "/help": "show shortcuts",
+    "/import": "pull conversations from another AI tool",
     "/model": "show/switch model profile",
     "/quit": "exit SuperTon",
     "/refresh": "reingest a source and remove stale chunks",
@@ -200,10 +201,24 @@ def _print_intro(cfg: Config, mem: Memory) -> None:
     s = mem.stats()
     ui.header(cfg, s)
     # The live bottom toolbar carries the routine hints (/help, /quit, palace
-    # state). Here we only surface the empty-palace nudge, since it's the one
-    # hint that demands action before the user can do anything useful.
+    # state). On a brand-new palace, the user lands here with zero context on
+    # what to do next — show a short ordered tutorial instead of the one-line
+    # nudge.
     if s["drawers"] == 0:
-        ui.footer_hints(["⚠  no drawers yet — add a file with /add <path>"])
+        t = ui.theme()
+        ui.blank()
+        ui.panel(
+            f"[bold]Your palace is empty.[/bold]  Three ways to fill it:\n\n"
+            f"  [{t.primary}]1[/]  [bold]/add ~/Documents[/bold]      "
+            f"[{t.muted}]ingest files or a directory[/]\n"
+            f"  [{t.primary}]2[/]  [bold]/import claude-code[/bold]   "
+            f"[{t.muted}]pull past Claude Code transcripts[/]\n"
+            f"  [{t.primary}]3[/]  paste any file path at the prompt\n\n"
+            f"[{t.muted}]Once you have drawers, just ask a question.[/]",
+            title="getting started",
+            anchor=True,
+        )
+        ui.blank()
     ui.rule()
 
 
@@ -344,6 +359,58 @@ def _print_themes(cfg: Config) -> None:
     ui.blank()
 
 
+def _run_import(mem: Memory, spec: str) -> None:
+    """Handle `/import <source> [path]` from inside the shell.
+
+    Thin wrapper around the dedicated importer classes — keeps the CLI's
+    `superton import ...` and the shell's `/import` in lockstep without
+    shelling out.
+    """
+    parts = spec.split(None, 1)
+    name = parts[0].lower()
+    extra = parts[1].strip() if len(parts) > 1 else ""
+    ui.blank()
+    try:
+        if name == "claude-code":
+            from superton.importers.claude_code import ClaudeCodeImporter
+
+            with ui.spinner("importing Claude Code sessions"):
+                sessions, drawers = ClaudeCodeImporter(mem).import_all(None)
+            ui.ok(f"imported {drawers} drawers", f"from {sessions} Claude Code sessions")
+        elif name == "chatgpt":
+            if not extra:
+                ui.warn("chatgpt import needs a path", "e.g. /import chatgpt ~/Downloads/chatgpt-export")
+                ui.blank()
+                return
+            from superton.importers.chatgpt import ChatGPTImporter
+
+            path = Path(extra).expanduser()
+            if not path.exists():
+                ui.warn(f"not found: {path}")
+                ui.blank()
+                return
+            with ui.spinner("importing ChatGPT conversations"):
+                conversations, drawers = ChatGPTImporter(mem).import_all(path)
+            ui.ok(f"imported {drawers} drawers", f"from {conversations} ChatGPT conversations")
+        elif name in {"cursor", "amp"}:
+            from superton.importers.generic_threads import GenericThreadImporter
+
+            default_root = Path.home() / f".{name}"
+            with ui.spinner(f"importing {name} threads"):
+                files, drawers = GenericThreadImporter(
+                    mem, name, default_root
+                ).import_all(None)
+            ui.ok(f"imported {drawers} drawers", f"from {files} {name} files")
+        else:
+            ui.warn(
+                f"unknown source: {name}",
+                "choose one of: claude-code, chatgpt <path>, cursor, amp",
+            )
+    except Exception as e:
+        ui.err(f"import failed: {e}")
+    ui.blank()
+
+
 def _switch_model(profile: str) -> Config:
     if profile not in MODEL_PROFILES:
         ui.blank()
@@ -358,15 +425,41 @@ def _switch_model(profile: str) -> Config:
         base_model=selected["base_model"],
         hf_model=selected["hf_model"],
     )
+    cfg = Config.load()
     ui.flash(
         f"[bold {ui.theme().primary}]model[/] → "
         f"[bold]{profile}[/]  [{ui.theme().muted}]{selected['base_model']}[/]"
     )
     ui.blank()
     ui.ok(f"model profile → {profile}", selected["base_model"])
-    ui.hint("run [bold]superton init --yes[/bold] to pull/rebuild if needed")
+    # Offer to pull+build immediately so the user doesn't have to drop back
+    # to the shell and re-run `superton init --yes`. We probe the existing
+    # Model first — if the base is already pulled and Miniton is already
+    # built, nothing to do.
+    model = Model(cfg)
+    needs_build = not model.has_model(cfg.model)
+    needs_pull = not model.has_model(cfg.base_model)
+    model.close()
+    if not needs_build and not needs_pull:
+        ui.hint("model already built — ready to chat")
+        ui.blank()
+        return cfg
+    action = "pull + build" if needs_pull else "rebuild"
+    try:
+        answer = input(f"  {action} {cfg.base_model} now? [Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
+    if answer in {"", "y", "yes"}:
+        from superton.cli import _build_miniton
+
+        if _build_miniton(cfg, yes=True):
+            ui.ok(f"rebuilt {cfg.model}")
+        else:
+            ui.warn("profile saved, but model was not rebuilt")
+    else:
+        ui.hint("run [bold]superton init --yes[/bold] later to finish setup")
     ui.blank()
-    return Config.load()
+    return cfg
 
 
 def _switch_theme(name: str) -> Config:
@@ -637,10 +730,22 @@ def run() -> None:
                 break
             if text in {"/help", "?"}:
                 ui.console().print(
-                    "/add <path> · /search <query> · /sources · /forget-source <name> · "
-                    "/refresh <path> · /model [fast|better|strong] · /theme · /clear · "
-                    "/doctor · /reindex · /quit"
+                    "ingest: /add <path> · /import claude-code|chatgpt|cursor|amp · "
+                    "/refresh <path>\n"
+                    "search: /search <query> · /sources · /forget-source <name>\n"
+                    "config: /model [fast|better|strong] · /theme · /reindex\n"
+                    "system: /doctor · /stats · /clear · /quit"
                 )
+                continue
+            if text == "/import" or text.startswith("/import "):
+                source = text.removeprefix("/import").strip()
+                if not source:
+                    ui.blank()
+                    ui.hint("usage: /import claude-code | chatgpt <path> | cursor | amp")
+                    ui.blank()
+                    continue
+                _run_import(mem, source)
+                status.refresh(cfg)
                 continue
             if text == "/clear":
                 history = []
