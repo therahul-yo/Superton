@@ -149,7 +149,7 @@ def test_shell_personal_query_refuses_weak_matches(cfg: Config, capsys: pytest.C
 
     mem = Memory(cfg)
     mem.add(text="SuperTon project roadmap and release notes", source="README.md")
-    _answer(mem, FakeModel(), "gimme rahul T projects from his resume")
+    _answer(mem, FakeModel(), "gimme alice T projects from her resume")
     out = capsys.readouterr().out
     assert "do not have matching memory" in out
     assert "should not be used" not in out
@@ -160,12 +160,12 @@ def test_shell_path_input_ingests_file(cfg: Config, tmp_path: Path):
     from superton.shell import _ingest_path
 
     note = tmp_path / "resume.txt"
-    note.write_text("Rahul T projects include SuperTon and MemPalace.", encoding="utf-8")
+    note.write_text("Alice T projects include SuperTon and MemPalace.", encoding="utf-8")
     mem = Memory(cfg)
     files, drawers = _ingest_path(mem, note)
     assert files == 1
     assert drawers == 1
-    assert mem.search("Rahul projects")
+    assert mem.search("Alice projects")
     mem.close()
 
 

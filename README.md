@@ -77,7 +77,7 @@ The interesting choices, with the tradeoffs called out:
   be wiped and rebuilt from SQLite (`superton reindex`) without data
   loss. Durability > performance.
 - **Hybrid retrieval with source-filename hoist.** Pure vector search
-  misses queries like *"rahul resume"* — Claude Code transcripts of
+  misses queries like *"my resume"* — Claude Code transcripts of
   `ls -la` embed closer to the query than the actual `resume.pdf`. The
   retriever hoists drawers whose filename overlaps the query, then merges
   with the hybrid v4 (`candidate_strategy="union"`, BM25 ∪ vector) result

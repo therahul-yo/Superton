@@ -10,6 +10,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
+from superton.ingest import CHUNK_SIZE, chunk_text
 from superton.memory import Memory
 
 
@@ -83,14 +84,19 @@ class ClaudeCodeImporter:
                 text = _extract_text(msg.get("content", ""))
                 if not text.strip():
                     continue
-                self.memory.add(
-                    text=f"[{role}] {text}",
-                    source=f"claude-code:{path.name}",
-                    wing=wing,
-                    room=room,
-                    metadata={"role": role, "session": path.stem},
-                )
-                count += 1
+                body = f"[{role}] {text}"
+                # Long turns (large tool_result blobs, pasted files) embed
+                # poorly as one drawer — chunk so each piece stays focused.
+                pieces = [body] if len(body) <= CHUNK_SIZE else list(chunk_text(body))
+                for piece in pieces:
+                    self.memory.add(
+                        text=piece,
+                        source=f"claude-code:{path.name}",
+                        wing=wing,
+                        room=room,
+                        metadata={"role": role, "session": path.stem},
+                    )
+                    count += 1
         return count
 
     def import_all(
