@@ -368,6 +368,14 @@ class Memory:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def drawers_for_source(self, source: str, *, limit: int = 20) -> list[Drawer]:
+        """Return drawers from one source in ingestion order."""
+        rows = self._db.execute(
+            "SELECT * FROM drawers WHERE source = ? ORDER BY created_at ASC LIMIT ?",
+            (source, limit),
+        ).fetchall()
+        return [self._row_to_drawer(r) for r in rows]
+
     def source_matches(self, query: str) -> list[str]:
         needle = query.strip()
         if not needle:

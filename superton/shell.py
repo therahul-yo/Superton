@@ -52,6 +52,8 @@ COMMAND_HELP = {
     "/stats": "show palace stats",
     "/theme": "show/switch CLI theme",
 }
+ANSWER_CONTEXT_DRAWERS = 10
+ANSWER_DRAWER_CHARS = 1200
 
 
 class _Status:
@@ -276,6 +278,67 @@ def _relevant_hits(question: str, hits):
     return [h for _, _, h in scored]
 
 
+def _wants_source_expansion(question: str) -> bool:
+    """True when one hit from a document is unlikely to be enough."""
+    normalized = question.lower()
+    exhaustive_markers = (
+        "all", "every", "list", "projects", "project", "experience",
+        "resume", "resue", "cv", "document", "pdf", "full",
+    )
+    return any(marker in normalized for marker in exhaustive_markers)
+
+
+def _expand_hits_for_answer(
+    mem: Memory,
+    question: str,
+    hits,
+    *,
+    max_drawers: int = ANSWER_CONTEXT_DRAWERS,
+):
+    """For document/list queries, include sibling chunks from matched sources.
+
+    Retrieval ranking is good at finding the right document, but exhaustive
+    questions like "all projects from my resume" need multiple chunks from
+    that same source. This preserves ranked hits first, then fills the context
+    with nearby source siblings in ingestion order.
+    """
+    ranked = list(hits)
+    if not ranked or not _wants_source_expansion(question):
+        return ranked[:max_drawers]
+
+    expanded = []
+    seen_ids: set[str] = set()
+
+    def add_hit(hit) -> None:
+        drawer_id = getattr(hit.drawer, "id", "")
+        if drawer_id and drawer_id not in seen_ids:
+            seen_ids.add(drawer_id)
+            expanded.append(hit)
+
+    for hit in ranked:
+        add_hit(hit)
+
+    source_order: list[str] = []
+    seen_sources: set[str] = set()
+    for hit in ranked:
+        source = hit.drawer.source
+        if source not in seen_sources:
+            seen_sources.add(source)
+            source_order.append(source)
+
+    from superton.memory import SearchHit
+
+    for source in source_order:
+        source_drawers = mem.drawers_for_source(source, limit=max_drawers)
+        for drawer in source_drawers:
+            if len(expanded) >= max_drawers:
+                break
+            add_hit(SearchHit(drawer=drawer, score=0.70))
+        if len(expanded) >= max_drawers:
+            break
+    return expanded[:max_drawers]
+
+
 def _print_search_hits(hits) -> None:
     """Render hits as compact stacked cards.
 
@@ -474,6 +537,8 @@ def _build_system_prompt(*, has_drawers: bool) -> str:
             "user has already given you access to them.\n\n"
             "Your job:\n"
             "- Use ONLY the drawers to answer. Quote specific facts from them.\n"
+            "- If asked for all/list projects, scan every supplied drawer and "
+            "list every distinct project you can find.\n"
             "- For vague questions like 'X details', 'tell me about X', or "
             "'summary', produce 3-6 concise bullet points that summarize what "
             "the drawers say about the subject.\n"
@@ -546,7 +611,7 @@ def _answer(
     can append it to conversation history."""
     search_query = _contextualize_query(question, history)
     raw_hits = mem.search(search_query, limit=8) if _should_retrieve(question) else []
-    hits = _relevant_hits(question, raw_hits)
+    hits = _expand_hits_for_answer(mem, question, _relevant_hits(question, raw_hits))
     # For memory-specific queries (resume, document, etc.) we refuse
     # when no retrieved drawer shares even a single meaningful token with the
     # query. This keeps Miniton from confabulating an answer from drawers
@@ -569,8 +634,9 @@ def _answer(
         _print_assistant(refusal)
         return refusal
     context = "\n\n---\n\n".join(
-        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
-        for h in hits[:3]
+        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n"
+        f"{h.drawer.text[:ANSWER_DRAWER_CHARS]}"
+        for h in hits[:ANSWER_CONTEXT_DRAWERS]
     )
     system = _build_system_prompt(has_drawers=bool(hits))
     if _is_meta_question(question):
@@ -768,9 +834,11 @@ def run() -> None:
 # Back-compat: some older tests/scripts looked for __version__ here.
 __all__ = [
     "_answer",
+    "_expand_hits_for_answer",
     "_ingest_path",
     "_looks_memory_specific",
     "_relevant_hits",
+    "_wants_source_expansion",
     "run",
     "__version__",
 ]

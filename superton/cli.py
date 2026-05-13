@@ -374,9 +374,23 @@ def ask(
     mem = Memory(cfg)
     with ui.spinner("retrieving from palace"):
         raw_hits = mem.search(question, limit=max(k, 8))
-    from superton.shell import _any_token_match, _looks_memory_specific, _relevant_hits
+    from superton.shell import (
+        ANSWER_CONTEXT_DRAWERS,
+        ANSWER_DRAWER_CHARS,
+        _any_token_match,
+        _expand_hits_for_answer,
+        _looks_memory_specific,
+        _relevant_hits,
+        _wants_source_expansion,
+    )
 
-    hits = _relevant_hits(question, raw_hits)[:k]
+    context_limit = max(k, ANSWER_CONTEXT_DRAWERS) if _wants_source_expansion(question) else k
+    hits = _expand_hits_for_answer(
+        mem,
+        question,
+        _relevant_hits(question, raw_hits),
+        max_drawers=context_limit,
+    )[:context_limit]
     if _looks_memory_specific(question) and not _any_token_match(question, hits):
         ui.warn("no matching memory found")
         ui.hint("add the source first with [bold]superton add <path>[/bold]")
@@ -401,8 +415,9 @@ def ask(
         ui.blank()
 
     context = "\n\n---\n\n".join(
-        f"[drawer:{h.drawer.id[:8]} · {Path(h.drawer.source).name}]\n{h.drawer.text[:700]}"
-        for h in hits
+        f"[drawer:{h.drawer.id[:8]} · {Path(h.drawer.source).name}]\n"
+        f"{h.drawer.text[:ANSWER_DRAWER_CHARS]}"
+        for h in hits[:context_limit]
     )
     from superton.shell import _build_system_prompt
 
