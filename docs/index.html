@@ -26,7 +26,7 @@
 html{background:var(--void);scroll-behavior:smooth}
 body{
   background:var(--void);color:var(--paper-dim);
-  font-family:"Geist Mono","JetBrains Mono",ui-monospace,monospace;font-size:14px;line-height:1.7;
+  font-family:"Geist Mono","JetBrains Mono",ui-monospace,monospace;font-size:15.5px;line-height:1.7;font-weight:500;
   -webkit-font-smoothing:antialiased;overflow-x:hidden;
 }
 a{color:var(--paper);text-decoration:none;border-bottom:1px solid var(--rule);transition:border-color .2s,color .2s}
@@ -70,18 +70,18 @@ a:hover{color:var(--ember);border-color:var(--ember)}
 
 /* --- hero -------------------------------------------------------------- */
 .hero{padding-bottom:80px;border-bottom:1px solid var(--rule)}
-.eyebrow{display:flex;align-items:center;gap:10px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:36px}
+.eyebrow{display:flex;align-items:center;gap:10px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:36px}
 .eyebrow .dot{width:5px;height:5px;background:var(--ember);border-radius:50%;animation:pulse 2.6s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.35}}
 
-h1.title{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:clamp(48px,6.4vw,76px);line-height:.98;letter-spacing:-.035em;color:var(--paper);margin-bottom:32px}
+h1.title{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:clamp(56px,7.4vw,92px);line-height:.96;letter-spacing:-.035em;color:var(--paper);margin-bottom:32px}
 h1.title em{color:var(--ember);font-weight:400}
 
-.tagline{font-size:14.5px;line-height:1.75;color:var(--paper-dim);margin-bottom:40px;max-width:46ch}
+.tagline{font-size:16.5px;line-height:1.7;font-weight:500;color:var(--paper-dim);margin-bottom:40px;max-width:46ch}
 .tagline em{color:var(--paper);font-style:normal;font-weight:600}
 
 .cta{display:flex;gap:10px;flex-wrap:wrap}
-.btn{display:inline-flex;align-items:center;gap:10px;padding:13px 20px;font-family:"Geist Mono","JetBrains Mono",monospace;font-weight:500;font-size:12.5px;letter-spacing:.02em;border:1px solid var(--rule-strong);background:transparent;color:var(--paper);cursor:pointer;border-radius:0;transition:all .2s}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;font-family:"Geist Mono","JetBrains Mono",monospace;font-weight:600;font-size:13.5px;letter-spacing:.02em;border:1px solid var(--rule-strong);background:transparent;color:var(--paper);cursor:pointer;border-radius:0;transition:all .2s}
 .btn.primary{background:var(--ember);color:var(--void);border-color:var(--ember);font-weight:600}
 .btn.primary:hover{background:var(--paper);border-color:var(--paper)}
 .btn:hover{border-color:var(--paper);color:var(--paper)}
@@ -90,17 +90,17 @@ h1.title em{color:var(--ember);font-weight:400}
 /* --- section blocks --------------------------------------------------- */
 section{padding:64px 0;border-bottom:1px solid var(--rule)}
 section:last-of-type{border-bottom:0}
-.section-label{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:28px;display:flex;align-items:center;gap:12px}
+.section-label{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:28px;display:flex;align-items:center;gap:12px}
 .section-label::before{content:"";display:block;width:18px;height:1px;background:var(--ember)}
-.section-title{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:clamp(22px,2.8vw,30px);line-height:1.2;letter-spacing:-.02em;color:var(--paper);margin-bottom:36px;max-width:32ch}
+.section-title{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:clamp(28px,3.6vw,40px);line-height:1.15;letter-spacing:-.02em;color:var(--paper);margin-bottom:36px;max-width:32ch}
 
 /* --- install ---------------------------------------------------------- */
 .steps{display:flex;flex-direction:column;gap:24px}
 .step .label{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px}
 .step .label b{color:var(--ember);font-weight:700;margin-right:8px}
-.step .note{font-size:12.5px;color:var(--paper-faint);margin-top:8px;line-height:1.6}
+.step .note{font-size:13.5px;font-weight:500;color:var(--paper-faint);margin-top:8px;line-height:1.6}
 .step .note code{color:var(--ember);background:transparent}
-.cmd{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:12.5px;background:var(--void-2);border:1px solid var(--rule);padding:13px 16px;display:flex;align-items:center;gap:10px;color:var(--paper);overflow-x:auto;cursor:pointer;position:relative;transition:border-color .2s,background .2s}
+.cmd{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:13.5px;font-weight:500;background:var(--void-2);border:1px solid var(--rule);padding:14px 18px;display:flex;align-items:center;gap:10px;color:var(--paper);overflow-x:auto;cursor:pointer;position:relative;transition:border-color .2s,background .2s}
 .cmd:hover{border-color:var(--ember)}
 .cmd .prompt{color:var(--ember);user-select:none}
 .cmd .copy{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:"Geist Mono","JetBrains Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--paper-faint);background:var(--void);padding:4px 8px;opacity:0;transition:opacity .2s,color .2s}
@@ -108,7 +108,7 @@ section:last-of-type{border-bottom:0}
 .cmd.copied .copy{color:var(--ember);opacity:1}
 
 /* --- terminal --------------------------------------------------------- */
-.terminal{background:var(--void-2);border:1px solid var(--rule);font-family:"Geist Mono","JetBrains Mono",monospace;font-size:12.5px;line-height:1.7;color:var(--paper-dim);overflow:hidden}
+.terminal{background:var(--void-2);border:1px solid var(--rule);font-family:"Geist Mono","JetBrains Mono",monospace;font-size:13.5px;font-weight:500;line-height:1.7;color:var(--paper-dim);overflow:hidden}
 .terminal .titlebar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--rule)}
 .terminal .titlebar .lights{display:flex;gap:5px}
 .terminal .titlebar .lights span{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18)}
@@ -124,9 +124,9 @@ section:last-of-type{border-bottom:0}
 /* --- tenets ----------------------------------------------------------- */
 .tenets{display:flex;flex-direction:column;gap:24px}
 .tenet{display:grid;grid-template-columns:40px 1fr;gap:18px;align-items:baseline}
-.tenet .n{font-family:"Instrument Serif",ui-serif,serif;font-weight:500;color:var(--ember);font-size:18px}
-.tenet h3{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:17px;color:var(--paper);margin-bottom:4px;letter-spacing:-.005em}
-.tenet p{font-size:12.5px;color:var(--paper-dim);line-height:1.7}
+.tenet .n{font-family:"Instrument Serif",ui-serif,serif;font-weight:500;color:var(--ember);font-size:22px}
+.tenet h3{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:22px;color:var(--paper);margin-bottom:4px;letter-spacing:-.005em}
+.tenet p{font-size:13.5px;font-weight:500;color:var(--paper-dim);line-height:1.7}
 
 /* --- footer ----------------------------------------------------------- */
 .foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding-top:60px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--paper-faint)}
