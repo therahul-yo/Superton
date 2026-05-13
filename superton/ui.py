@@ -344,6 +344,52 @@ def style_kbd(s: Any) -> str:
     )
 
 
+# --- prompt_toolkit color bridge ---------------------------------------------
+# Rich understands shade-named greys (grey50, grey70, ...) but prompt_toolkit
+# does not; it wants hex or a small set of named colors. Translate on the fly
+# so we can keep themes expressed in Rich's natural vocabulary.
+_GREY_MAP: dict[str, str] = {
+    "grey15": "#262626",
+    "grey30": "#4D4D4D",
+    "grey35": "#595959",
+    "grey50": "#808080",
+    "grey60": "#999999",
+    "grey70": "#B3B3B3",
+    "grey82": "#D1D1D1",
+    "grey85": "#D9D9D9",
+}
+
+_PT_MODIFIERS: frozenset[str] = frozenset(
+    {"bold", "italic", "underline", "reverse", "blink", "dim", "noreverse"}
+)
+
+
+def pt_color(rich_style: str) -> str:
+    """Convert a Rich-style color/modifier string to a prompt_toolkit-safe
+    style string.
+
+    Rich strings look like 'bold white', 'grey50', 'bold #FFD93D'. This
+    function normalizes them into prompt_toolkit's syntax — modifiers stay
+    as bare tokens, color names get a 'fg:' prefix, and Rich's shade-named
+    greys map to hex equivalents. An empty input returns an empty string so
+    callers can hand pt_style bare defaults.
+    """
+    if not rich_style:
+        return ""
+    out: list[str] = []
+    for part in rich_style.strip().split():
+        lower = part.lower()
+        if lower in _PT_MODIFIERS:
+            out.append(lower)
+            continue
+        color = _GREY_MAP.get(lower, part)
+        if color.startswith(("fg:", "bg:")):
+            out.append(color)
+        else:
+            out.append(f"fg:{color}")
+    return " ".join(out)
+
+
 # --- git project awareness ----------------------------------------------------
 
 def git_info(start: Path | None = None) -> tuple[str | None, str | None]:

@@ -135,17 +135,24 @@ def _prompt(status: _Status | None = None) -> str:
                 return get_line
 
         # Theme-aware styles for the prompt glyph, lexer classes, and the
-        # bottom status bar. The status bar holds the live palace summary so
-        # the user always sees where they are — same role as Claude Code's
-        # persistent footer.
+        # bottom status bar. We route all theme colors through ui.pt_color
+        # because prompt_toolkit does not understand Rich's shade-named
+        # greys (grey50, grey70, ...). Under mono that would raise ValueError
+        # and drop the whole prompt into the plain-input fallback — which
+        # was the 'no / menu, no bottom toolbar' bug.
         t = ui.theme()
+        primary_pt = ui.pt_color(t.primary)
+        secondary_pt = ui.pt_color(t.secondary)
+        muted_pt = ui.pt_color(t.muted)
+        if "bold" not in primary_pt.split():
+            primary_pt = f"bold {primary_pt}".strip()
         pt_style = Style.from_dict({
-            "cmd": f"bold {t.primary}",
-            "arg": t.secondary if t.secondary.startswith("#") else "",
+            "cmd": primary_pt,
+            "arg": secondary_pt,
             "text": "",
-            "glyph": f"bold {t.primary}" if t.primary.startswith("#") or t.primary.startswith("bold") else t.primary,
-            "bottom-toolbar": f"{t.muted} noreverse",
-            "bottom-toolbar.text": f"{t.muted}",
+            "glyph": primary_pt,
+            "bottom-toolbar": f"{muted_pt} noreverse",
+            "bottom-toolbar.text": muted_pt,
         })
 
         # Persistent command history across shell sessions.
