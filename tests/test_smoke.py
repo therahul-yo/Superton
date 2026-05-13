@@ -210,6 +210,38 @@ def test_memory_sources_and_forget_source(cfg: Config):
     mem.close()
 
 
+def test_memory_drawers_for_source_returns_ingestion_order(cfg: Config):
+    mem = Memory(cfg)
+    mem.add(text="first chunk", source="/tmp/resume.pdf")
+    mem.add(text="second chunk", source="/tmp/resume.pdf")
+    mem.add(text="other chunk", source="/tmp/other.pdf")
+    rows = mem.drawers_for_source("/tmp/resume.pdf")
+    assert [d.text for d in rows] == ["first chunk", "second chunk"]
+    mem.close()
+
+
+def test_shell_expands_resume_project_context(cfg: Config):
+    from superton.shell import _answer
+
+    captured = {}
+
+    class FakeModel:
+        def generate(self, prompt, system=None, history=None):
+            captured["prompt"] = prompt
+            yield "ok"
+
+    mem = Memory(cfg)
+    source = "/tmp/rahul_projects_resume.pdf"
+    for i in range(1, 7):
+        mem.add(text=f"Project {i}: built feature {i}.", source=source)
+
+    _answer(mem, FakeModel(), "projects resume")
+    prompt = captured["prompt"]
+    for i in range(1, 7):
+        assert f"Project {i}" in prompt
+    mem.close()
+
+
 def test_blackhole_renders():
     from superton.blackhole import render_frame, static_frame
     frame = render_frame(0.0)
