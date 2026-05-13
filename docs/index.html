@@ -3,389 +3,289 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SuperTon · the palace at the edge of forgetting</title>
+<title>SuperTon · a local memory palace</title>
 <meta name="description" content="A local memory palace. Feed it your notes, PDFs, and AI-chat transcripts; ask grounded questions answered by a tiny local model. 100% local, MCP-ready." />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<meta name="theme-color" content="#ff6b00" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..900,0..100;1,9..144,300..900,0..100&family=JetBrains+Mono:ital,wght@0,300..800;1,300..800&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@300;400;500;600;700&display=swap" />
 
 <style>
 :root{
   --void:#000;
-  --void-near:#070608;
-  --dust:#13110f;
-  --plasma:#ff7a18;
-  --plasma-hot:#ffd166;
-  --plasma-cool:#ff3b6b;
-  --photon:#fff8e7;
-  --bone:#d6c8b3;
-  --bone-dim:#8a8074;
-  --comet:#7ee0ff;
-  --quasar:#b39dff;
-  --rule:rgba(255,248,231,0.12);
-  --grid:rgba(255,248,231,0.04);
+  --void-2:#0a0a0a;
+  --ember:#ff6b00;
+  --ember-soft:rgba(255,107,0,.6);
+  --paper:#ffffff;
+  --paper-dim:rgba(255,255,255,.72);
+  --paper-faint:rgba(255,255,255,.42);
+  --rule:rgba(255,255,255,.10);
+  --rule-strong:rgba(255,255,255,.22);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{background:var(--void);color:var(--bone);font-family:"JetBrains Mono",ui-monospace,monospace;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-body{position:relative;min-height:100vh}
-a{color:var(--comet);text-decoration:none;border-bottom:1px solid rgba(126,224,255,.25);transition:border-color .25s,color .25s}
-a:hover{color:var(--photon);border-color:var(--photon)}
-::selection{background:var(--plasma);color:var(--void)}
+html{background:var(--void);scroll-behavior:smooth}
+body{
+  background:var(--void);color:var(--paper-dim);
+  font-family:"Geist Mono","JetBrains Mono",ui-monospace,monospace;font-size:15.5px;line-height:1.7;font-weight:500;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+a{color:var(--paper);text-decoration:none;border-bottom:1px solid var(--rule);transition:border-color .2s,color .2s}
+a:hover{color:var(--ember);border-color:var(--ember)}
+::selection{background:var(--ember);color:var(--void)}
 
-/* --- video backdrop ----------------------------------------------------- */
-.bg-video{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:-3;pointer-events:none;filter:contrast(1.05) saturate(.7) brightness(.7);background:#000}
-.bg-veil{position:fixed;inset:0;z-index:-2;pointer-events:none;background:
-  radial-gradient(ellipse 60% 50% at 50% 50%, transparent 30%, rgba(0,0,0,.55) 70%, rgba(0,0,0,.85) 100%),
-  linear-gradient(to bottom, rgba(0,0,0,.45) 0%, rgba(0,0,0,.15) 30%, rgba(0,0,0,.2) 70%, rgba(0,0,0,.75) 100%);
+/* --- split layout ------------------------------------------------------ */
+.left{position:fixed;top:0;right:0;width:50vw;height:100vh;overflow:hidden;background:#000;border-left:1px solid var(--rule-strong);z-index:5}
+.left .vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:contrast(1.08) saturate(.85) brightness(.92)}
+.left .frame{position:absolute;inset:0;pointer-events:none;background:
+  linear-gradient(to bottom, rgba(0,0,0,.55) 0%, transparent 18%, transparent 70%, rgba(0,0,0,.7) 100%),
+  radial-gradient(ellipse 90% 70% at 50% 50%, transparent 50%, rgba(0,0,0,.35) 100%);
+}
+.left .corners{position:absolute;inset:18px;pointer-events:none}
+.left .corners::before,.left .corners::after,
+.left .corners > i::before,.left .corners > i::after{
+  content:"";position:absolute;width:18px;height:18px;border:1px solid var(--ember);
+}
+.left .corners::before{top:0;left:0;border-right:0;border-bottom:0}
+.left .corners::after{top:0;right:0;border-left:0;border-bottom:0}
+.left .corners > i::before{bottom:0;left:0;border-right:0;border-top:0}
+.left .corners > i::after{bottom:0;right:0;border-left:0;border-top:0}
+
+.left .caption{position:absolute;left:32px;right:32px;bottom:32px;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.32em;text-transform:uppercase;color:var(--paper-dim)}
+.left .caption b{display:block;color:var(--ember);font-weight:700;font-size:9px;letter-spacing:.38em;margin-bottom:6px}
+.left .caption .title{font-family:"Instrument Serif",ui-serif,serif;font-weight:500;font-size:18px;letter-spacing:-.005em;text-transform:none;color:var(--paper)}
+.left .topmark{position:absolute;top:32px;left:32px;display:flex;align-items:center;gap:10px;font-family:"Instrument Serif",ui-serif,serif;font-weight:500;font-size:18px;color:var(--paper)}
+.left .topmark .dot{width:7px;height:7px;background:var(--ember);border-radius:50%;display:inline-block}
+
+.right{margin-right:50vw;min-height:100vh;background:var(--void);position:relative;z-index:1}
+.right .grain{position:absolute;inset:0;pointer-events:none;opacity:.04;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' stitchTiles='stitch' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
 
-.grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.06;mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' stitchTiles='stitch' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/></svg>");
-}
+/* --- right column shell ------------------------------------------------ */
+.right-inner{max-width:780px;padding:112px 72px 100px;position:relative;z-index:2}
 
-/* --- top nav ------------------------------------------------------------ */
-.nav{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:22px 36px;backdrop-filter:blur(8px);background:linear-gradient(to bottom, rgba(0,0,0,.6), transparent)}
-.brand{display:flex;align-items:center;gap:12px;font-family:"Fraunces",serif;font-style:italic;font-weight:500;font-size:22px;letter-spacing:.01em;border:0;color:var(--photon)}
-.brand .ring{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 30% 30%, var(--plasma-hot), var(--plasma) 35%, #000 70%);box-shadow:0 0 14px var(--plasma),0 0 30px rgba(255,122,24,.5);display:inline-block}
-.nav .links{display:flex;gap:28px;font-size:12px;text-transform:uppercase;letter-spacing:.22em;color:var(--bone-dim)}
-.nav .links a{color:var(--bone-dim);border:0}
-.nav .links a:hover{color:var(--photon)}
-.nav .star{font-family:"Fraunces",serif;font-style:italic;font-size:13px;color:var(--photon);border:1px solid var(--rule);padding:6px 14px;border-radius:999px}
-.nav .star:hover{border-color:var(--plasma)}
+.topnav{position:absolute;top:0;left:0;right:0;z-index:4;display:flex;justify-content:space-between;align-items:center;padding:26px 72px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.32em;text-transform:uppercase;color:var(--paper-faint);border-bottom:1px solid var(--rule);background:linear-gradient(to bottom, rgba(0,0,0,.6), transparent)}
+.topnav a{color:var(--paper-dim);border:0}
+.topnav a:hover{color:var(--ember)}
 
-/* --- hero --------------------------------------------------------------- */
-.hero{min-height:100vh;display:grid;grid-template-columns:1.05fr .95fr;align-items:center;gap:0;padding:120px 56px 80px;position:relative}
-.hero::before{content:"";position:absolute;top:80px;left:56px;right:56px;height:1px;background:var(--rule)}
-.hero-meta{display:flex;justify-content:space-between;align-items:center;position:absolute;top:92px;left:56px;right:56px;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--bone-dim)}
-.hero-meta span:nth-child(2){font-family:"Fraunces",serif;font-style:italic;letter-spacing:.04em;text-transform:none;color:var(--photon);font-size:13px}
+/* --- hero -------------------------------------------------------------- */
+.hero{padding-bottom:80px;border-bottom:1px solid var(--rule)}
+.eyebrow{display:flex;align-items:center;gap:10px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:36px}
+.eyebrow .dot{width:5px;height:5px;background:var(--ember);border-radius:50%;animation:pulse 2.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
 
-.hero-copy{position:relative;z-index:2}
-.eyebrow{font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:var(--plasma);margin-bottom:30px;display:flex;align-items:center;gap:10px}
-.eyebrow .dot{width:5px;height:5px;background:var(--plasma);border-radius:50%;box-shadow:0 0 12px var(--plasma);animation:pulse 2.4s ease-in-out infinite}
-@keyframes pulse{50%{opacity:.4}}
-h1.title{font-family:"Fraunces",serif;font-weight:300;font-size:clamp(64px,11vw,168px);line-height:.88;letter-spacing:-.045em;color:var(--photon);margin-bottom:18px}
-h1.title em{font-style:italic;font-weight:400;color:var(--plasma-hot);font-variation-settings:"SOFT" 100}
-.tagline{font-family:"Fraunces",serif;font-style:italic;font-weight:300;font-size:clamp(20px,2.2vw,28px);line-height:1.35;max-width:540px;color:var(--bone);margin-bottom:42px}
-.tagline em{color:var(--photon);font-style:italic}
+h1.title{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:clamp(56px,7.4vw,92px);line-height:.96;letter-spacing:-.035em;color:var(--paper);margin-bottom:32px}
+h1.title em{color:var(--ember);font-weight:400}
 
-.cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
-.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 24px;font-family:"JetBrains Mono",monospace;font-size:13px;letter-spacing:.04em;border:1px solid var(--rule);background:transparent;color:var(--bone);cursor:pointer;border-radius:0;transition:all .3s cubic-bezier(.2,.7,.2,1);position:relative;overflow:hidden}
-.btn.primary{background:var(--photon);color:var(--void);border-color:var(--photon)}
-.btn.primary:hover{background:var(--plasma-hot);border-color:var(--plasma-hot);box-shadow:0 0 0 1px var(--plasma),0 0 40px rgba(255,122,24,.35);transform:translateY(-1px)}
-.btn:hover{border-color:var(--photon);color:var(--photon)}
-.btn .arr{font-family:"Fraunces",serif;font-style:italic;font-size:18px;line-height:1}
+.tagline{font-size:16.5px;line-height:1.7;font-weight:500;color:var(--paper-dim);margin-bottom:40px;max-width:46ch}
+.tagline em{color:var(--paper);font-style:normal;font-weight:600}
 
-/* --- hero side panel (replaces former singularity column) ------------- */
-.hero-side{position:relative;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-end;min-height:520px;gap:24px}
-.hero-side .floating{font-family:"Fraunces",serif;font-style:italic;color:var(--bone-dim);font-size:13px;line-height:1.55;text-align:right;max-width:280px}
-.hero-side .floating::before{content:"";display:block;width:48px;height:1px;background:var(--plasma);margin:0 0 14px auto}
-.hero-side .crosshair{display:grid;grid-template-columns:auto auto;gap:6px 16px;font-size:10px;letter-spacing:.26em;text-transform:uppercase;color:var(--bone-dim);justify-content:end}
-.hero-side .crosshair b{color:var(--photon);font-weight:400;font-family:"JetBrains Mono",monospace}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;font-family:"Geist Mono","JetBrains Mono",monospace;font-weight:600;font-size:13.5px;letter-spacing:.02em;border:1px solid var(--rule-strong);background:transparent;color:var(--paper);cursor:pointer;border-radius:0;transition:all .2s}
+.btn.primary{background:var(--ember);color:var(--void);border-color:var(--ember);font-weight:600}
+.btn.primary:hover{background:var(--paper);border-color:var(--paper)}
+.btn:hover{border-color:var(--paper);color:var(--paper)}
+.btn .prompt{opacity:.7;font-weight:600}
 
-/* --- sections ----------------------------------------------------------- */
-section{padding:120px 56px;position:relative}
-.section-head{display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:end;margin-bottom:64px;border-bottom:1px solid var(--rule);padding-bottom:24px}
-.section-num{font-family:"JetBrains Mono",monospace;font-size:12px;letter-spacing:.3em;color:var(--plasma);writing-mode:vertical-rl;transform:rotate(180deg)}
-.section-title{font-family:"Fraunces",serif;font-weight:300;font-size:clamp(40px,5.5vw,76px);line-height:.95;letter-spacing:-.03em;color:var(--photon)}
-.section-title em{font-style:italic;color:var(--plasma-hot)}
-.section-sub{font-family:"Fraunces",serif;font-style:italic;font-size:18px;color:var(--bone-dim);max-width:520px;margin-top:14px;line-height:1.45}
+/* --- section blocks --------------------------------------------------- */
+section{padding:64px 0;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.section-label{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.34em;text-transform:uppercase;color:var(--ember);margin-bottom:28px;display:flex;align-items:center;gap:12px}
+.section-label::before{content:"";display:block;width:18px;height:1px;background:var(--ember)}
+.section-title{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:clamp(28px,3.6vw,40px);line-height:1.15;letter-spacing:-.02em;color:var(--paper);margin-bottom:36px;max-width:32ch}
 
-/* --- install ------------------------------------------------------------ */
-.install-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--rule);background:rgba(255,248,231,0.015)}
-.install-card{padding:36px;border-right:1px solid var(--rule);position:relative;transition:background .3s}
-.install-card:last-child{border-right:0}
-.install-card:hover{background:rgba(255,122,24,.02)}
-.install-card .stage{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--plasma);margin-bottom:14px}
-.install-card h3{font-family:"Fraunces",serif;font-weight:400;font-style:italic;font-size:30px;color:var(--photon);margin-bottom:6px}
-.install-card .lead{font-size:13px;color:var(--bone-dim);margin-bottom:24px}
-.cmd{font-family:"JetBrains Mono",monospace;font-size:13px;background:#000;border:1px solid var(--rule);padding:14px 16px;display:flex;align-items:center;gap:10px;color:var(--photon);overflow-x:auto;cursor:pointer;position:relative;transition:border-color .25s}
-.cmd:hover{border-color:var(--plasma)}
-.cmd .prompt{color:var(--plasma);user-select:none}
-.cmd .copy{position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--bone-dim);background:rgba(0,0,0,.9);padding:4px 8px;border:1px solid var(--rule);opacity:0;transition:opacity .2s,color .2s}
+/* --- install ---------------------------------------------------------- */
+.steps{display:flex;flex-direction:column;gap:24px}
+.step .label{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px}
+.step .label b{color:var(--ember);font-weight:700;margin-right:8px}
+.step .note{font-size:13.5px;font-weight:500;color:var(--paper-faint);margin-top:8px;line-height:1.6}
+.step .note code{color:var(--ember);background:transparent}
+.cmd{font-family:"Geist Mono","JetBrains Mono",monospace;font-size:13.5px;font-weight:500;background:var(--void-2);border:1px solid var(--rule);padding:14px 18px;display:flex;align-items:center;gap:10px;color:var(--paper);overflow-x:auto;cursor:pointer;position:relative;transition:border-color .2s,background .2s}
+.cmd:hover{border-color:var(--ember)}
+.cmd .prompt{color:var(--ember);user-select:none}
+.cmd .copy{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:"Geist Mono","JetBrains Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--paper-faint);background:var(--void);padding:4px 8px;opacity:0;transition:opacity .2s,color .2s}
 .cmd:hover .copy{opacity:1}
-.cmd.copied .copy{color:var(--plasma-hot);opacity:1}
-.cmd + .cmd{margin-top:10px}
-.install-foot{margin-top:18px;font-size:11px;letter-spacing:.02em;color:var(--bone-dim)}
-.install-foot code{color:var(--comet);background:transparent;padding:0 2px}
+.cmd.copied .copy{color:var(--ember);opacity:1}
 
-/* --- what it eats ------------------------------------------------------- */
-.eats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-left:1px solid var(--rule)}
-.eat{border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:36px 28px;min-height:240px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden;transition:background .35s}
-.eat::before{content:"";position:absolute;width:120%;height:120%;left:50%;top:120%;transform:translate(-50%,0);background:radial-gradient(circle, rgba(255,122,24,.18), transparent 60%);transition:top .6s cubic-bezier(.2,.7,.2,1);pointer-events:none}
-.eat:hover::before{top:30%}
-.eat .glyph{font-family:"Fraunces",serif;font-style:italic;font-weight:300;font-size:78px;line-height:1;color:var(--plasma-hot);opacity:.85}
-.eat h4{font-family:"Fraunces",serif;font-style:italic;font-weight:400;font-size:24px;color:var(--photon);margin-bottom:6px}
-.eat p{font-size:13px;color:var(--bone-dim);line-height:1.55}
-.eat .tag{position:absolute;top:18px;right:18px;font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:var(--bone-dim)}
+/* --- terminal --------------------------------------------------------- */
+.terminal{background:var(--void-2);border:1px solid var(--rule);font-family:"Geist Mono","JetBrains Mono",monospace;font-size:13.5px;font-weight:500;line-height:1.7;color:var(--paper-dim);overflow:hidden}
+.terminal .titlebar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--rule)}
+.terminal .titlebar .lights{display:flex;gap:5px}
+.terminal .titlebar .lights span{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18)}
+.terminal .titlebar .lights span:first-child{background:var(--ember)}
+.terminal .titlebar .where{margin-left:6px;font-size:10px;letter-spacing:.06em;color:var(--paper-faint)}
+.terminal .body{padding:20px 22px;min-height:280px;white-space:pre-wrap;word-break:break-word}
+.terminal .body .p{color:var(--ember)}
+.terminal .body .u{color:var(--paper)}
+.terminal .body .a{color:var(--paper-dim)}
+.terminal .body .c{color:var(--paper-faint)}
+.terminal .body .cite{color:var(--ember)}
 
-/* --- quickstart transcript --------------------------------------------- */
-.transcript{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:start}
-.transcript .terminal{background:#020203;border:1px solid var(--rule);font-family:"JetBrains Mono",monospace;font-size:13px;line-height:1.7;color:var(--bone);overflow:hidden;box-shadow:0 30px 80px rgba(255,122,24,.05),0 0 0 1px rgba(255,255,255,.02)}
-.transcript .titlebar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--rule);background:rgba(255,255,255,.02)}
-.transcript .titlebar .lights{display:flex;gap:6px}
-.transcript .titlebar .lights span{width:9px;height:9px;border-radius:50%;background:#1a1a1a}
-.transcript .titlebar .lights span:nth-child(1){background:rgba(255,122,24,.45)}
-.transcript .titlebar .lights span:nth-child(2){background:rgba(255,209,102,.45)}
-.transcript .titlebar .lights span:nth-child(3){background:rgba(126,224,255,.4)}
-.transcript .titlebar .where{margin-left:10px;font-size:11px;color:var(--bone-dim);letter-spacing:.04em}
-.transcript .body{padding:22px 24px;min-height:360px;white-space:pre-wrap;word-break:break-word}
-.transcript .body .p{color:var(--plasma)}
-.transcript .body .u{color:var(--photon)}
-.transcript .body .a{color:var(--bone)}
-.transcript .body .c{color:var(--bone-dim)}
-.transcript .body .k{color:var(--comet)}
-.transcript .body .cite{color:var(--plasma-hot)}
+/* --- tenets ----------------------------------------------------------- */
+.tenets{display:flex;flex-direction:column;gap:24px}
+.tenet{display:grid;grid-template-columns:40px 1fr;gap:18px;align-items:baseline}
+.tenet .n{font-family:"Instrument Serif",ui-serif,serif;font-weight:500;color:var(--ember);font-size:22px}
+.tenet h3{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:22px;color:var(--paper);margin-bottom:4px;letter-spacing:-.005em}
+.tenet p{font-size:13.5px;font-weight:500;color:var(--paper-dim);line-height:1.7}
 
-.transcript .copy-col h3{font-family:"Fraunces",serif;font-style:italic;font-weight:400;font-size:30px;color:var(--photon);margin-bottom:14px;line-height:1.15}
-.transcript .copy-col p{color:var(--bone);margin-bottom:14px;font-size:14px;max-width:46ch}
-.transcript .copy-col .pillrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
-.pill{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--bone);border:1px solid var(--rule);padding:7px 12px;border-radius:999px}
-.pill em{font-style:italic;color:var(--plasma-hot);font-family:"Fraunces",serif;text-transform:none;letter-spacing:0;margin-right:6px}
+/* --- footer ----------------------------------------------------------- */
+.foot{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding-top:60px;font-family:"Geist Mono","JetBrains Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--paper-faint)}
+.foot .mark{font-family:"Instrument Serif",ui-serif,serif;font-weight:400;font-size:13px;letter-spacing:-.005em;color:var(--paper);text-transform:none}
+.foot a{color:var(--paper-dim);border:0}
+.foot a:hover{color:var(--ember)}
 
-/* --- why-it-works ------------------------------------------------------- */
-.tenets{display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
-.tenet{border-top:1px solid var(--rule);padding-top:24px}
-.tenet .num{font-family:"Fraunces",serif;font-style:italic;font-size:48px;color:var(--plasma);line-height:1;margin-bottom:18px}
-.tenet h5{font-family:"Fraunces",serif;font-weight:400;font-style:italic;font-size:24px;color:var(--photon);margin-bottom:10px}
-.tenet p{font-size:13.5px;color:var(--bone-dim);line-height:1.65}
-
-/* --- footer ------------------------------------------------------------- */
-footer{padding:80px 56px 60px;border-top:1px solid var(--rule);display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end}
-footer .mark{font-family:"Fraunces",serif;font-style:italic;font-size:60px;font-weight:300;color:var(--photon);line-height:.9;letter-spacing:-.03em}
-footer .mark em{color:var(--plasma)}
-footer .lines{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--bone-dim);text-align:right;line-height:2}
-footer .lines a{color:var(--bone);border:0}
-footer .lines a:hover{color:var(--plasma-hot)}
-
-/* --- reveal animations -------------------------------------------------- */
-.reveal{opacity:0;transform:translateY(20px);transition:opacity 1.1s cubic-bezier(.2,.7,.2,1),transform 1.1s cubic-bezier(.2,.7,.2,1)}
+/* --- reveal ----------------------------------------------------------- */
+.reveal{opacity:0;transform:translateY(10px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
 .reveal.in{opacity:1;transform:translateY(0)}
-.delay-1{transition-delay:.08s}.delay-2{transition-delay:.16s}.delay-3{transition-delay:.24s}.delay-4{transition-delay:.32s}.delay-5{transition-delay:.40s}.delay-6{transition-delay:.48s}
+.d1{transition-delay:.06s}.d2{transition-delay:.12s}.d3{transition-delay:.18s}.d4{transition-delay:.24s}
 
-/* --- responsive --------------------------------------------------------- */
-@media (max-width:980px){
-  .nav{padding:18px 22px}
-  .nav .links{display:none}
-  .hero{grid-template-columns:1fr;padding:120px 24px 60px;gap:48px}
-  .hero::before{left:24px;right:24px}
-  .hero-meta{left:24px;right:24px}
-  .hero-side{min-height:auto;align-items:flex-start}
-  .hero-side .floating::before{margin-left:0}
-  .hero-side .floating{text-align:left}
-  .hero-side .crosshair{justify-content:start}
-  section{padding:80px 24px}
-  .install-grid{grid-template-columns:1fr}
-  .install-card{border-right:0;border-bottom:1px solid var(--rule)}
-  .install-card:last-child{border-bottom:0}
-  .eats{grid-template-columns:1fr 1fr}
-  .transcript{grid-template-columns:1fr}
-  .tenets{grid-template-columns:1fr}
-  footer{padding:60px 24px 40px;grid-template-columns:1fr}
-  footer .lines{text-align:left}
-}
-@media (max-width:560px){
-  .eats{grid-template-columns:1fr}
-  .section-head{grid-template-columns:1fr;gap:14px}
-  .section-num{writing-mode:horizontal-tb;transform:none}
+/* --- responsive (stack the panels) ------------------------------------ */
+@media (max-width:900px){
+  .left{position:relative;width:100%;height:48vh;border-left:0;border-bottom:1px solid var(--rule-strong)}
+  .left .caption{left:24px;right:24px;bottom:24px}
+  .left .topmark{top:24px;left:24px}
+  .right{margin-right:0}
+  .right-inner{padding:80px 28px 60px;max-width:none}
+  .topnav{padding:18px 28px}
 }
 </style>
 </head>
 <body>
 
-<video class="bg-video" autoplay muted loop playsinline preload="auto" poster="assets/ascii-bg-poster.jpg" aria-hidden="true">
-  <source src="assets/ascii-bg.webm" type="video/webm" />
-  <source src="assets/ascii-bg.mp4" type="video/mp4" />
-</video>
-<div class="bg-veil" aria-hidden="true"></div>
-<div class="grain" aria-hidden="true"></div>
-
-<nav class="nav">
-  <a href="#top" class="brand"><span class="ring"></span>SuperTon</a>
-  <div class="links">
-    <a href="#install">Install</a>
-    <a href="#palace">Palace</a>
-    <a href="#session">Session</a>
-    <a href="#tenets">Tenets</a>
+<!-- left panel : video plate ----------------------------------------- -->
+<aside class="left">
+  <video class="vid" autoplay muted loop playsinline disableremoteplayback preload="auto" poster="assets/ascii-bg-poster.jpg" aria-hidden="true">
+    <source src="assets/ascii-bg.mp4" type="video/mp4" />
+    <source src="assets/ascii-bg.webm" type="video/webm" />
+  </video>
+  <div class="frame" aria-hidden="true"></div>
+  <div class="corners" aria-hidden="true"><i></i></div>
+  <div class="topmark"><span class="dot"></span>SuperTon</div>
+  <div class="caption">
+    <div><b>fig. 01</b>the palace</div>
+    <div class="title">at the edge of forgetting</div>
+    <div><b>v0.1.0</b>alpha · local</div>
   </div>
-  <a class="star" href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">★ Star on GitHub</a>
-</nav>
+</aside>
 
-<header class="hero" id="top">
-  <div class="hero-meta">
-    <span>EST · 2025 / version 0.1.0</span>
-    <span>the palace at the edge of forgetting</span>
-    <span>local · offline · yours</span>
-  </div>
+<!-- right panel : content -------------------------------------------- -->
+<main class="right">
+  <div class="grain" aria-hidden="true"></div>
 
-  <div class="hero-copy">
-    <div class="eyebrow reveal in"><span class="dot"></span>singularity / 47.3°N · drift -0.001Hz</div>
-    <h1 class="title reveal in delay-1">Super<em>Ton</em></h1>
-    <p class="tagline reveal in delay-2">A local <em>memory palace</em> for your scattered notes, PDFs, and AI-chat transcripts. Searchable. Grounded. Yours — and it doesn't forget.</p>
-    <div class="cta reveal in delay-3">
-      <button class="btn primary" onclick="copyCmd('uv tool install \'git+https://github.com/therahul-yo/Superton.git\'', this)">
-        <span class="prompt">▸</span><span id="primary-cmd">uv tool install superton</span><span class="arr">↗</span>
-      </button>
-      <a class="btn" href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer"><span class="arr">★</span> GitHub</a>
-    </div>
-  </div>
+  <nav class="topnav">
+    <a href="#install">01 · install</a>
+    <a href="#session">02 · session</a>
+    <a href="#tenets">03 · tenets</a>
+    <a href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">github →</a>
+  </nav>
 
-  <div class="hero-side reveal in delay-4">
-    <p class="floating">Drop matter at the event horizon — <em>notes, PDFs, AI transcripts, code</em> — and let the palace hold it, intact, until you ask for it back.</p>
-    <div class="crosshair">
-      <span>memory</span><b>verbatim · sqlite + chroma</b>
-      <span>retrieval</span><b>hybrid · bm25 ∪ vector</b>
-      <span>model</span><b>local · miniton</b>
-      <span>license</span><b>apache-2.0</b>
-    </div>
-  </div>
-</header>
+  <div class="right-inner" id="top">
 
-<section id="install">
-  <div class="section-head reveal">
-    <div class="section-num">§ 01 / installation</div>
-    <div>
-      <h2 class="section-title">Three doors <em>into the palace.</em></h2>
-      <p class="section-sub">Pick the one that fits your machine. None require a cloud account. None phone home.</p>
-    </div>
-  </div>
-
-  <div class="install-grid">
-    <div class="install-card reveal">
-      <div class="stage">door 01 · recommended</div>
-      <h3>via uv</h3>
-      <p class="lead">Single command. Always uses an isolated environment.</p>
-      <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="uv tool install 'git+https://github.com/therahul-yo/Superton.git'"><span class="prompt">$</span><span>uv tool install 'git+https://github.com/therahul-yo/Superton.git'</span><span class="copy">copy</span></div>
-      <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="superton init"><span class="prompt">$</span><span>superton init</span><span class="copy">copy</span></div>
-      <div class="install-foot">Requires <code>uv</code> · <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">install uv</a></div>
-    </div>
-
-    <div class="install-card reveal delay-1">
-      <div class="stage">door 02 · hackers</div>
-      <h3>from source</h3>
-      <p class="lead">Clone, edit, contribute. Great if you want to tune the Modelfile.</p>
-      <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="git clone https://github.com/therahul-yo/Superton.git"><span class="prompt">$</span><span>git clone https://github.com/therahul-yo/Superton.git</span><span class="copy">copy</span></div>
-      <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="cd Superton &amp;&amp; uv run superton init"><span class="prompt">$</span><span>cd Superton &amp;&amp; uv run superton init</span><span class="copy">copy</span></div>
-      <div class="install-foot">Python 3.11+ · Apache-2.0</div>
-    </div>
-
-    <div class="install-card reveal delay-2">
-      <div class="stage">door 03 · prerequisite</div>
-      <h3>the model runtime</h3>
-      <p class="lead">SuperTon answers locally via Ollama. <code>init</code> can install this for you, or do it yourself.</p>
-      <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="brew install ollama"><span class="prompt">$</span><span>brew install ollama</span><span class="copy">copy</span></div>
-      <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="curl -fsSL https://ollama.com/install.sh | sh"><span class="prompt">$</span><span>curl -fsSL https://ollama.com/install.sh | sh</span><span class="copy">copy</span></div>
-      <div class="install-foot">macOS · Linux · Windows (WSL)</div>
-    </div>
-  </div>
-</section>
-
-<section id="palace">
-  <div class="section-head reveal">
-    <div class="section-num">§ 02 / what it eats</div>
-    <div>
-      <h2 class="section-title">Drawers in, <em>nothing forgotten.</em></h2>
-      <p class="section-sub">Verbatim storage. No summarization. No filing. Drop matter at the event horizon and let the palace handle it.</p>
-    </div>
-  </div>
-
-  <div class="eats">
-    <div class="eat reveal">
-      <div class="tag">format · markdown</div>
-      <div class="glyph">¶</div>
-      <div><h4>Notes &amp; markdown</h4><p>Your Obsidian vault, scratch <code>.md</code> files, half-written drafts. All chunked, indexed, searchable by half-remembered phrases.</p></div>
-    </div>
-    <div class="eat reveal delay-1">
-      <div class="tag">format · pdf</div>
-      <div class="glyph">§</div>
-      <div><h4>PDFs &amp; docs</h4><p>Research papers, contracts, your old résumé. Hybrid retrieval finds them by filename even when you forget the exact words inside.</p></div>
-    </div>
-    <div class="eat reveal delay-2">
-      <div class="tag">format · transcripts</div>
-      <div class="glyph">∞</div>
-      <div><h4>AI chat history</h4><p>Claude Code · ChatGPT · Cursor · Amp. Every assistant you ever talked to becomes a single searchable memory layer.</p></div>
-    </div>
-    <div class="eat reveal delay-3">
-      <div class="tag">format · code</div>
-      <div class="glyph">⌘</div>
-      <div><h4>Source &amp; logs</h4><p>Codebases, build logs, runtime traces. Ask why-did-X questions across projects months after the context evaporated.</p></div>
-    </div>
-  </div>
-</section>
-
-<section id="session">
-  <div class="section-head reveal">
-    <div class="section-num">§ 03 / first session</div>
-    <div>
-      <h2 class="section-title">A grounded answer <em>in nine seconds.</em></h2>
-      <p class="section-sub">No prompt-engineering rituals. No filing. Ingest, ask, cite.</p>
-    </div>
-  </div>
-
-  <div class="transcript">
-    <div class="terminal reveal">
-      <div class="titlebar">
-        <div class="lights"><span></span><span></span><span></span></div>
-        <div class="where">~/superton · miniton · 1.8k drawers</div>
+    <header class="hero">
+      <div class="eyebrow reveal in"><span class="dot"></span>v0.1.0 · alpha · local-only</div>
+      <h1 class="title reveal in d1">A local <em>memory palace</em>. For everything you scattered.</h1>
+      <p class="tagline reveal in d2">SuperTon ingests your notes, PDFs, and AI-chat transcripts into a verbatim store, then a tiny local model answers your questions — grounded only in what you've fed it. <em>Nothing leaves your laptop.</em></p>
+      <div class="cta reveal in d3">
+        <button class="btn primary" onclick="copyCmd('uv tool install \'git+https://github.com/therahul-yo/Superton.git\'', this)">
+          <span class="prompt">$</span>uv tool install superton
+        </button>
+        <a class="btn" href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">GitHub →</a>
       </div>
-      <div class="body" id="terminal-body"></div>
-    </div>
+    </header>
 
-    <div class="copy-col reveal delay-2">
-      <h3>The palace remembers in your voice — not a frontier model's.</h3>
-      <p>Hybrid retrieval (SQLite FTS5 ∪ vector search) finds the right drawer even when your query is sloppy. The model never invents facts; it only quotes what's in the palace, with drawer-id citations you can verify.</p>
-      <p>The whole stack — embeddings, generation, storage — runs on your laptop. Ollama on the inside, Apache-2.0 on the outside.</p>
-      <div class="pillrow">
-        <span class="pill"><em>R@5</em> 98.4% on LongMemEval</span>
-        <span class="pill"><em>SQLite</em> source of truth</span>
-        <span class="pill"><em>MCP</em> 29 tools exposed</span>
+    <section id="install">
+      <div class="section-label reveal">Install</div>
+      <h2 class="section-title reveal d1">Two commands. No cloud account. No telemetry.</h2>
+      <div class="steps">
+        <div class="step reveal">
+          <div class="label"><b>01</b>Install SuperTon</div>
+          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="uv tool install 'git+https://github.com/therahul-yo/Superton.git'"><span class="prompt">$</span><span>uv tool install 'git+https://github.com/therahul-yo/Superton.git'</span><span class="copy">copy</span></div>
+          <div class="note">Requires <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a>. Or clone the repo and run <code>uv run superton</code>.</div>
+        </div>
+        <div class="step reveal d1">
+          <div class="label"><b>02</b>Initialize the palace</div>
+          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="superton init"><span class="prompt">$</span><span>superton init</span><span class="copy">copy</span></div>
+          <div class="note">Picks a model profile, pulls Ollama if missing, builds Miniton.</div>
+        </div>
+        <div class="step reveal d2">
+          <div class="label"><b>+</b>Optional · install Ollama yourself</div>
+          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="brew install ollama"><span class="prompt">$</span><span>brew install ollama</span><span class="copy">copy</span></div>
+        </div>
       </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-<section id="tenets">
-  <div class="section-head reveal">
-    <div class="section-num">§ 04 / design tenets</div>
-    <div>
-      <h2 class="section-title">Three laws of <em>the palace.</em></h2>
-      <p class="section-sub">Opinionated trade-offs we made early and won't apologize for.</p>
-    </div>
-  </div>
+    <section id="session">
+      <div class="section-label reveal">Session</div>
+      <h2 class="section-title reveal d1">Ingest. Ask. Cite.</h2>
+      <div class="terminal reveal d2">
+        <div class="titlebar">
+          <div class="lights"><span></span><span></span><span></span></div>
+          <div class="where">~/superton · miniton</div>
+        </div>
+        <div class="body" id="terminal-body"></div>
+      </div>
+    </section>
 
-  <div class="tenets">
-    <div class="tenet reveal">
-      <div class="num">I.</div>
-      <h5>Verbatim beats summarized</h5>
-      <p>A summary loses the half-remembered phrase you'll actually search for in six months. Drawers store the original text. Storage is cheap; recall is everything.</p>
-    </div>
-    <div class="tenet reveal delay-1">
-      <div class="num">II.</div>
-      <h5>Refuse over confabulate</h5>
-      <p>When the palace is silent, Miniton says so — and suggests the closest files. No hallucinated dates, names, or numbers. Trust over confidence.</p>
-    </div>
-    <div class="tenet reveal delay-2">
-      <div class="num">III.</div>
-      <h5>Local until proven otherwise</h5>
-      <p>No API keys. No telemetry. No SaaS dependency. The palace lives on your laptop; the model lives in your Ollama. If you go offline, nothing breaks.</p>
-    </div>
-  </div>
-</section>
+    <section id="tenets">
+      <div class="section-label reveal">Tenets</div>
+      <h2 class="section-title reveal d1">Three opinions, kept honest.</h2>
+      <div class="tenets">
+        <div class="tenet reveal">
+          <div class="n">I.</div>
+          <div>
+            <h3>Verbatim beats summarized.</h3>
+            <p>Drawers store the original text. A summary loses the half-remembered phrase you'll actually search for in six months.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d1">
+          <div class="n">II.</div>
+          <div>
+            <h3>Refuse over confabulate.</h3>
+            <p>When the palace is silent, Miniton says so — and suggests the closest files. No invented dates, names, or numbers.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d2">
+          <div class="n">III.</div>
+          <div>
+            <h3>Local until proven otherwise.</h3>
+            <p>No API keys. No telemetry. No SaaS dependency. The palace lives on your laptop; the model lives in your Ollama.</p>
+          </div>
+        </div>
+      </div>
+    </section>
 
-<footer>
-  <div class="reveal">
-    <div class="mark">drawers in,<br><em>nothing</em> forgotten.</div>
+    <div class="foot">
+      <div class="mark">drawers in, nothing forgotten.</div>
+      <div><a href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">github</a> · <a href="https://github.com/therahul-yo/Superton/blob/main/README.md" target="_blank" rel="noreferrer">docs</a> · apache-2.0</div>
+    </div>
+
   </div>
-  <div class="lines reveal delay-1">
-    <div><a href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">github · therahul-yo/Superton</a></div>
-    <div><a href="https://github.com/therahul-yo/Superton/blob/main/README.md" target="_blank" rel="noreferrer">read the docs</a></div>
-    <div><a href="https://github.com/therahul-yo/Superton/issues" target="_blank" rel="noreferrer">report a bug</a></div>
-    <div>apache-2.0 · python 3.11+</div>
-  </div>
-</footer>
+</main>
 
 <script>
-/* --- copy-to-clipboard ---------------------------------------------------- */
+/* --- force-play video --------------------------------------------------- */
+(function(){
+  const v = document.querySelector('.vid');
+  if(!v) return;
+  v.muted = true; v.playsInline = true;
+  const tryPlay = ()=>{
+    const p = v.play();
+    if(p && typeof p.catch === 'function'){
+      p.catch(()=>{
+        const unlock = ()=>{ v.play().catch(()=>{}); };
+        document.addEventListener('pointerdown', unlock, {once:true});
+        document.addEventListener('keydown', unlock, {once:true});
+      });
+    }
+  };
+  if(v.readyState >= 2) tryPlay();
+  else v.addEventListener('loadeddata', tryPlay, {once:true});
+  v.addEventListener('canplay', tryPlay, {once:true});
+})();
+
+/* --- copy-to-clipboard -------------------------------------------------- */
 function copyCmd(cmd, el){
   navigator.clipboard?.writeText(cmd).catch(()=>{});
   el.classList.add('copied');
@@ -398,15 +298,15 @@ function copyCmd(cmd, el){
   }, 1400);
 }
 
-/* --- scroll reveal -------------------------------------------------------- */
+/* --- scroll reveal ------------------------------------------------------ */
 const io = new IntersectionObserver((entries)=>{
   for(const e of entries){
     if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }
   }
-}, {threshold:.12, rootMargin:"0px 0px -60px 0px"});
+}, {threshold:.1, rootMargin:"0px 0px -40px 0px"});
 document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 
-/* --- terminal typewriter -------------------------------------------------- */
+/* --- terminal typewriter ----------------------------------------------- */
 const SCRIPT = [
   {cls:'c', text:'# fill the palace once\n'},
   {cls:'p', text:'$ '},{cls:'u', text:'superton add ~/Documents\n'},
@@ -414,24 +314,16 @@ const SCRIPT = [
   {cls:'p', text:'$ '},{cls:'u', text:'superton import claude-code\n'},
   {cls:'a', text:'✓ pulled 27 sessions · 4,116 drawers\n\n'},
   {cls:'c', text:'# ask anything\n'},
-  {cls:'p', text:'> '},{cls:'u', text:'what did i decide about the auth rewrite last spring?\n\n'},
+  {cls:'p', text:'> '},{cls:'u', text:'what did i decide about the auth rewrite?\n\n'},
   {cls:'a', text:'You chose to delete the cookie path and require Bearer\ntokens on every route. The migration ran in three batches\nto avoid a long table lock. '},
-  {cls:'cite', text:'[drawer:a4f2d1c8]'},{cls:'a', text:' '},{cls:'cite', text:'[drawer:71e0b6aa]'},{cls:'a', text:'\n\n'},
-  {cls:'p', text:'> '},{cls:'k', text:'/sources\n'},
-  {cls:'a', text:'  12  notes/auth-rewrite-rfc.md\n   8  claude-code:session-2025-04-11.jsonl\n   3  chatgpt:auth retrospective\n'},
+  {cls:'cite', text:'[a4f2d1c8]'},{cls:'a', text:' '},{cls:'cite', text:'[71e0b6aa]'},{cls:'a', text:'\n'},
 ];
 const body = document.getElementById('terminal-body');
-let cursor = document.createElement('span');
-cursor.textContent = '▎';
-cursor.style.color = 'var(--plasma)';
-cursor.style.animation = 'pulse 1s steps(2) infinite';
-
 function startTyping(){
   body.textContent = '';
   let i = 0;
   function next(){
     if(i >= SCRIPT.length){
-      body.appendChild(cursor);
       setTimeout(()=>{ body.textContent=''; startTyping(); }, 6000);
       return;
     }
@@ -442,37 +334,21 @@ function startTyping(){
     const speed = part.text.length > 30 ? 18 : 38;
     function tick(){
       span.textContent += part.text[j++];
-      if(j >= part.text.length){
-        next();
-      } else {
-        setTimeout(tick, speed);
-      }
+      if(j >= part.text.length){ next(); }
+      else { setTimeout(tick, speed); }
     }
     body.appendChild(span);
     tick();
   }
   next();
 }
-
-// only start when terminal scrolls into view (saves CPU on small screens)
 const termObserver = new IntersectionObserver((entries)=>{
   for(const e of entries){
     if(e.isIntersecting){ startTyping(); termObserver.disconnect(); }
   }
 }, {threshold:.3});
-termObserver.observe(document.querySelector('.terminal'));
-
-/* --- subtle parallax on hero copy ---------------------------------------- */
-const heroCopy = document.querySelector('.hero-copy');
-const heroSide = document.querySelector('.hero-side');
-if(heroCopy && matchMedia('(pointer:fine)').matches){
-  document.querySelector('.hero').addEventListener('mousemove', (e)=>{
-    const dx = (e.clientX / window.innerWidth) - .5;
-    const dy = (e.clientY / window.innerHeight) - .5;
-    heroCopy.style.transform = `translate(${dx * -6}px, ${dy * -4}px)`;
-    if(heroSide) heroSide.style.transform = `translate(${dx * 8}px, ${dy * 5}px)`;
-  });
-}
+const termEl = document.querySelector('.terminal');
+if(termEl) termObserver.observe(termEl);
 </script>
 </body>
 </html>
