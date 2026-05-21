@@ -29,7 +29,7 @@ class Drawer:
     wing: str = "default"
     room: str = "default"
     created_at: float = field(default_factory=time.time)
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -133,7 +133,7 @@ class Memory:
         self._db.commit()
 
     def add(self, text: str, source: str, *, wing: str = "default", room: str = "default",
-            metadata: dict | None = None) -> Drawer:
+            metadata: dict[str, Any] | None = None) -> Drawer:
         d = Drawer(
             id=_hash_id(text, source),
             text=text,
@@ -174,10 +174,10 @@ class Memory:
             return semantic_hits
         return self._search_sqlite(query, limit=limit)
 
-    _mempalace_kwargs_cache: dict | None = None
+    _mempalace_kwargs_cache: dict[str, Any] | None = None
 
     @classmethod
-    def _mempalace_search_kwargs(cls, fn) -> dict:
+    def _mempalace_search_kwargs(cls, fn: Any) -> dict[str, Any]:
         """Return tuning kwargs accepted by the installed mempalace.search_memories.
 
         Cached on the class — `inspect.signature` is cheap but the lookup
@@ -359,7 +359,7 @@ class Memory:
         r = self._db.execute("SELECT * FROM drawers WHERE id = ?", (drawer_id,)).fetchone()
         return self._row_to_drawer(r) if r else None
 
-    def sources(self, *, limit: int = 100) -> list[dict]:
+    def sources(self, *, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.execute(
             """
             SELECT source, COUNT(*) AS drawers, MAX(created_at) AS latest
@@ -476,7 +476,7 @@ class Memory:
         ).fetchall()
         return [self._row_to_drawer(r) for r in rows]
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         n = self._db.execute("SELECT COUNT(*) AS n FROM drawers").fetchone()["n"]
         wings = self._db.execute(
             "SELECT COUNT(DISTINCT wing) AS n FROM drawers"
@@ -498,7 +498,7 @@ class Memory:
     def _semantic_enabled(self) -> bool:
         return self.cfg.memory_backend in {"hybrid", "semantic", "mempalace"}
 
-    def _semantic(self, *, create: bool = True):
+    def _semantic(self, *, create: bool = True) -> Any | None:
         if not self._semantic_enabled():
             return None
         if self._semantic_collection is not None:
@@ -599,7 +599,7 @@ class Memory:
         )
 
     @staticmethod
-    def _semantic_row_to_drawer(drawer_id: str, text: str, metadata: dict) -> Drawer:
+    def _semantic_row_to_drawer(drawer_id: str, text: str, metadata: dict[str, Any]) -> Drawer:
         raw_metadata = metadata.get("metadata_json", "{}")
         try:
             parsed_metadata = json.loads(raw_metadata)

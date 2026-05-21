@@ -1054,7 +1054,9 @@ def dedup(
     ui.section("dedup", f"threshold {threshold:.2f} · {'dry-run' if dry_run else 'APPLY'}")
     with ui.spinner("scanning palace for duplicates"):
         try:
-            result = dedup_palace(
+            # mempalace's dedup_palace signature varies across versions —
+            # the TypeError fallback below handles older positional-only forms.
+            result = dedup_palace(  # type: ignore[call-arg]
                 palace_path=str(cfg.semantic_dir),
                 collection_name=cfg.semantic_collection,
                 threshold=threshold,

@@ -5,17 +5,26 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 from platformdirs import user_data_dir
 
 from superton.logging import get_logger
+
+
+class ModelProfile(TypedDict):
+    base_model: str
+    hf_model: str
+    label: str
+    download_gb: float
+    min_ram_gb: int
 
 log = get_logger("config")
 
 VALID_BACKENDS = {"auto", "ollama", "huggingface"}
 VALID_MEMORY_BACKENDS = {"hybrid", "semantic", "mempalace", "sqlite"}
 
-MODEL_PROFILES = {
+MODEL_PROFILES: dict[str, ModelProfile] = {
     "fast": {
         "base_model": "qwen2.5:1.5b-instruct",
         "hf_model": "Qwen/Qwen2.5-1.5B-Instruct",

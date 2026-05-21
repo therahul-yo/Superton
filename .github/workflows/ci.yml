@@ -56,5 +56,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --python 3.12
 
-      - name: Type check (core modules)
-        run: uv run mypy superton/memory.py superton/model.py superton/config.py superton/errors.py superton/logging.py superton/ingest.py
+      - name: Type check
+        run: uv run mypy superton

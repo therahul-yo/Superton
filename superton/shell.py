@@ -902,9 +902,9 @@ def run() -> None:
                 ])
                 ui.blank()
                 continue
-            path = _path_from_input(text)
-            if path is not None:
-                files, drawers = _ingest_path(mem, path)
+            inline_path = _path_from_input(text)
+            if inline_path is not None:
+                files, drawers = _ingest_path(mem, inline_path)
                 ui.ok(f"ingested {drawers} drawers", f"from {files} file(s)")
                 continue
             if text == "/search":
