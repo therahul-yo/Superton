@@ -19,7 +19,7 @@ class StatusHeader(Widget):
     backend_online: reactive[bool] = reactive(False)
     drawers: reactive[int] = reactive(0)
     theme_name: reactive[str] = reactive("nebula")
-    model_profile: reactive[str] = reactive("fast")
+    model_profile: reactive[str] = reactive("proton")
     pending_op: reactive[str | None] = reactive(None)
 
     def compose(self):

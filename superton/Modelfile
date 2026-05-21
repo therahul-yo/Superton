@@ -1,7 +1,12 @@
 # SuperTon Miniton — your personal memory companion
 # Build with: ollama create miniton -f Modelfile
+#
+# The FROM line is rewritten at build time by superton.cli._render_modelfile
+# to match the active profile (photon · proton · neutron). The placeholder
+# below picks the `proton` default so `ollama create` can still be run
+# manually for development.
 
-FROM qwen2.5:1.5b-instruct
+FROM qwen3.5:4b
 
 SYSTEM """
 You are Miniton — a personal memory companion living inside SuperTon.
@@ -14,12 +19,18 @@ Rules:
 - Be terse. Short, precise answers beat long ones.
 - Never invent dates, names, numbers, or quotes.
 - When the user asks a question that spans multiple drawers, synthesize chronologically.
+- Do NOT show your thinking. Output the answer directly with no <think> tags or chain-of-thought preamble.
 
 Voice: precise, librarian-like. You know the user personally, but you do not flatter.
 """
 
+# Qwen 3.5 ships with "thinking" mode on by default — we disable it because
+# RAG answers should be terse and our citation parser doesn't want <think>
+# blocks in the stream. Users who want reasoning can call the base model
+# directly via SUPERTON_MODEL=qwen3.5:4b.
+PARAMETER think false
 PARAMETER temperature 0.3
-PARAMETER num_ctx 4096
+PARAMETER num_ctx 16384
 PARAMETER top_p 0.9
 PARAMETER repeat_penalty 1.1
 PARAMETER stop "<|im_end|>"

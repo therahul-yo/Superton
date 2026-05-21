@@ -10,9 +10,9 @@ from textual.widgets import Input, Label, ListItem, ListView
 
 PALETTE_ACTIONS: list[tuple[str, str]] = [
     ("switch theme", "/theme"),
-    ("switch model · fast",  "/model fast"),
-    ("switch model · better", "/model better"),
-    ("switch model · strong", "/model strong"),
+    ("switch model · photon",  "/model photon"),
+    ("switch model · proton",  "/model proton"),
+    ("switch model · neutron", "/model neutron"),
     ("doctor (health check)", "/doctor"),
     ("show palace stats",     "/stats"),
     ("list sources",          "/sources"),

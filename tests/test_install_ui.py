@@ -86,8 +86,8 @@ def test_ready_card_includes_palace_path_and_commands(cfg: Config, capsys):
 
 def test_profile_card_renders_selected_state(capsys):
     ui.profile_card(
-        "fast",
-        base_model="qwen2.5:1.5b-instruct",
+        "photon",
+        base_model="qwen3.5:0.8b",
         download_gb=1.0,
         min_ram_gb=4,
         label="lowest memory",
@@ -95,25 +95,25 @@ def test_profile_card_renders_selected_state(capsys):
         selected=True,
     )
     out = capsys.readouterr().out
-    assert "fast" in out
-    assert "qwen2.5:1.5b-instruct" in out
+    assert "photon" in out
+    assert "qwen3.5:0.8b" in out
     assert "~1.0 GB" in out
 
 
 def test_profile_card_unselected_uses_circle(capsys):
     ui.profile_card(
-        "strong",
-        base_model="qwen2.5:7b-instruct",
-        download_gb=4.7,
-        min_ram_gb=16,
+        "neutron",
+        base_model="qwen3.5:9b",
+        download_gb=6.6,
+        min_ram_gb=14,
         label="best local quality",
         ram_gb=8.0,
         selected=False,
     )
     out = capsys.readouterr().out
-    assert "strong" in out
+    assert "neutron" in out
     assert "○" in out
-    # 8 GB < 16 GB recommended → tight pill
+    # 8 GB < 14 GB recommended → tight pill
     assert "tight" in out
 
 
