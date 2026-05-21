@@ -20,7 +20,9 @@ answers your questions grounded in what you've fed it.
 - 📚 **Verbatim storage** — original text preserved; nothing summarized away
 - 🔗 **Multi-source** — import from Claude Code, ChatGPT, Cursor, Amp
 - 🎨 **Four themes** — nebula, mono, solar, frost — production-feel CLI
+- 🖥 **Full-screen TUI** — opt-in Textual app with palette, sidebar, modals (`superton tui`)
 - 🔌 **MCP-ready** — one command exposes your palace to Claude Code, Cursor, and Gemini CLI
+- 🛠 **Production-grade** — structured logging, typed errors with recovery hints, mypy-strict core, 187 tests
 - 🪶 **Lightweight** — runs comfortably on a laptop
 
 ## Demo
@@ -98,19 +100,28 @@ The interesting choices, with the tradeoffs called out:
   29 MCP tools to Claude Code, Cursor, and Gemini CLI — the palace
   becomes the shared memory layer for every agent on the machine,
   instead of yet another tool with its own silo.
+- **Production hardening over alpha polish.** Structured logging
+  (`SUPERTON_LOG=debug|info|warn|error|off`, optional JSON via
+  `SUPERTON_LOG_JSON=1`), typed errors that map known exceptions to
+  one-line recovery hints, mypy-strict on the core modules
+  (`memory`, `model`, `config`, `chat`, `errors`, `logging`, `ingest`),
+  and a 187-test suite at ~50 % coverage gating CI on Linux + macOS ×
+  Python 3.11 + 3.12.
 
 ## Tech stack
 
 Python 3.11+, [Typer](https://typer.tiangolo.com) (CLI),
 [Rich](https://rich.readthedocs.io) (output),
 [prompt-toolkit](https://python-prompt-toolkit.readthedocs.io)
-(interactive shell), SQLite + FTS5 (durable store),
+(interactive shell), [Textual](https://textual.textualize.io) (opt-in
+TUI), SQLite + FTS5 (durable store),
 [MemPalace](https://github.com/MemPalace/mempalace) + ChromaDB (semantic
 sidecar + MCP), [Ollama](https://ollama.com) (local model runtime),
 optional Hugging Face Inference fallback. Packaging with
 [uv](https://docs.astral.sh/uv/) and `hatchling`. Lint with
 [ruff](https://docs.astral.sh/ruff/), tests with
-[pytest](https://docs.pytest.org).
+[pytest](https://docs.pytest.org), type-check with
+[mypy](https://mypy.readthedocs.io).
 
 ## Install
 
@@ -274,23 +285,31 @@ Features:
 | `superton import cursor` | Import readable Cursor thread/log files |
 | `superton import amp` | Import readable Amp thread/log files |
 | `superton tune` | Edit the Modelfile and rebuild Miniton |
+| `superton tui` | Launch the full-screen Textual TUI (requires `[tui]` extra) |
 | `superton` | Launch the interactive CLI shell |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│   superton CLI (typer + rich + themes)      │
-├─────────────────────────────────────────────┤
-│   Miniton (Ollama + Modelfile)              │
-├─────────────────────────────────────────────┤
-│   memory: SQLite + MemPalace semantic       │
-│           + source-filename hoist re-rank   │
-├─────────────────────────────────────────────┤
-│   ingest: parsers + chunkers + importers    │
-├─────────────────────────────────────────────┤
-│   mcp: MemPalace MCP server (29 tools)      │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  surfaces:  CLI · prompt_toolkit shell · TUI    │
+├─────────────────────────────────────────────────┤
+│  chat: plan_answer / stream_answer / refusal    │
+│        — shared by shell & TUI in lockstep      │
+├─────────────────────────────────────────────────┤
+│  ui: themes (4) · spinner · cards · pills       │
+│  errors: typed exceptions + recovery hints      │
+│  logging: env-driven structured logs            │
+├─────────────────────────────────────────────────┤
+│  Miniton (Ollama + Modelfile · HF fallback)     │
+├─────────────────────────────────────────────────┤
+│  memory: SQLite + MemPalace semantic            │
+│          + source-filename hoist re-rank        │
+├─────────────────────────────────────────────────┤
+│  ingest: parsers · chunkers · importers · web   │
+├─────────────────────────────────────────────────┤
+│  mcp: MemPalace MCP server (29 tools)           │
+└─────────────────────────────────────────────────┘
 ```
 
 ## Themes
@@ -314,6 +333,39 @@ export SUPERTON_THEME=mono     # env override (useful in CI / screenshots)
 
 All semantic output (paths, drawer ids, commands, key bindings) is styled
 consistently per theme so switching looks intentional, not skinned.
+
+## TUI mode
+
+A full-screen Textual interface ships under the optional `[tui]` extra.
+The classic prompt-toolkit shell stays default for now; the TUI becomes
+the default interactive mode in 0.4.0 per the rollout in
+[`docs/TUI_ARCHITECTURE.md`](docs/TUI_ARCHITECTURE.md).
+
+```bash
+pip install 'superton[tui]'    # or: uv tool install 'superton[tui]'
+superton tui
+```
+
+Layout: status pills along the top (theme · model · backend · palace
+size), recent-sources sidebar with fuzzy filter on the left, scrollable
+chat transcript with streaming + citation chips on the right, mode
+breadcrumb and key hints in the footer.
+
+| key | action |
+|---|---|
+| `Ctrl+K` | command palette (fuzzy across slash commands + actions) |
+| `Ctrl+B` | toggle sidebar |
+| `Ctrl+L` | clear conversation |
+| `?` / `F1` | help modal |
+| `Esc` | close modal / return to chat |
+| `↑` / `↓` (input) | history navigation |
+| `/cmd args` | slash commands work the same as the classic shell |
+| `Ctrl+C` | quit |
+
+Themes propagate live: `/theme solar` repaints the running app without a
+restart. Same `superton.chat` orchestration backs both the TUI and the
+classic shell, so retrieval, refusal logic, and prompt construction stay
+in lockstep.
 
 ## MCP: plug SuperTon into your other AI tools
 
@@ -360,11 +412,49 @@ export HF_TOKEN=...
 superton ask "what did I decide about the auth refactor?"
 ```
 
+## Observability
+
+Default level is `warn` so day-to-day use stays quiet. Crank it up
+when something feels off:
+
+```bash
+SUPERTON_LOG=info superton search "auth refactor"
+SUPERTON_LOG=debug SUPERTON_LOG_JSON=1 superton ask "..." 2>logs.jsonl
+SUPERTON_LOG_FILE=~/superton.log superton tui
+```
+
+Every known failure renders with a one-line recovery hint — start
+Ollama, check `HF_TOKEN`, run `superton reindex`, etc. — instead of a
+bare traceback. `superton doctor` masks `HF_TOKEN` to its first/last
+four characters so the report is shareable.
+
+### Environment variables
+
+| variable | purpose | default |
+|---|---|---|
+| `SUPERTON_HOME` | override palace location | platform-specific |
+| `SUPERTON_THEME` | `nebula \| mono \| solar \| frost` | `nebula` |
+| `SUPERTON_MODEL_PROFILE` | `fast \| better \| strong` | `fast` |
+| `SUPERTON_MODEL_BACKEND` | `auto \| ollama \| huggingface` | `auto` |
+| `SUPERTON_MEMORY_BACKEND` | `hybrid \| semantic \| mempalace \| sqlite` | `hybrid` |
+| `SUPERTON_BASE_MODEL` | override the Ollama base tag | profile default |
+| `SUPERTON_HF_MODEL` | override the Hugging Face fallback | profile default |
+| `OLLAMA_HOST` | Ollama daemon URL | `http://127.0.0.1:11434` |
+| `HF_TOKEN` | enables Hugging Face fallback | — |
+| `SUPERTON_LOG` | `debug \| info \| warn \| error \| off` | `warn` |
+| `SUPERTON_LOG_JSON` | one JSON record per line on stderr | off |
+| `SUPERTON_LOG_FILE` | tee structured logs to a file | — |
+
+Invalid values for the theme / model / memory backends fall back to
+sane defaults and log a warning rather than crashing.
+
 ## Release Check
 
 ```bash
 uv sync --extra dev
-uv run pytest
+uv run pytest                       # 187 tests, ~50% coverage
+uv run pytest --cov=superton --cov-fail-under=45
+uv run mypy superton                # strict on core modules
 uv run ruff check .
 uv build
 uv tool install dist/superton-0.1.0-py3-none-any.whl --force
@@ -378,9 +468,15 @@ superton doctor
 - **Phase 1** — semantic search via MemPalace, hybrid SQLite fallback,
   source-filename hoist re-rank, themes, streaming answers with citations,
   staged init, `mcp serve`, `dedup`, multi-turn REPL ✅
+- **Phase 1.5** — production hardening: structured logging, typed errors
+  with recovery hints, mypy-strict core, 187-test suite, Linux+macOS CI,
+  UI polish pass (verb-cycling spinners, cards, pills, diff refresh) ✅
+- **Phase 1.6** — opt-in Textual TUI (`superton tui`) sharing the same
+  `superton.chat` orchestration as the classic shell ✅
 - **Phase 2** *(current)* — `timeline` / `entities` via MemPalace knowledge
   graph, batched ingest via `mempalace.miner`, OCR fallback for image PDFs,
-  file watcher, `export` / `import-palace` / `sync`
+  file watcher, `export` / `import-palace` / `sync`, promote TUI to default
+  interactive mode (see [`docs/TUI_ARCHITECTURE.md`](docs/TUI_ARCHITECTURE.md))
 - **Phase 3** — Gemini importer, browser extension, JSON output mode,
   packaging polish
 - **Phase 4** — `evolve` (LoRA fine-tune from your drawers), web UI
@@ -393,4 +489,5 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 Built on the shoulders of [Ollama](https://ollama.com),
 [MemPalace](https://github.com/MemPalace/mempalace),
-[Typer](https://typer.tiangolo.com), and [Rich](https://rich.readthedocs.io).
+[Typer](https://typer.tiangolo.com), [Rich](https://rich.readthedocs.io),
+and [Textual](https://textual.textualize.io).
