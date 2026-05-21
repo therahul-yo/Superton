@@ -526,3 +526,5 @@ Built on the shoulders of [Ollama](https://ollama.com),
 [MemPalace](https://github.com/MemPalace/mempalace),
 [Typer](https://typer.tiangolo.com), [Rich](https://rich.readthedocs.io),
 and [Textual](https://textual.textualize.io).
+
+Development assistance from Claude Code and OpenAI Codex.
