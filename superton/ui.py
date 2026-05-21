@@ -144,7 +144,8 @@ def _resolve_theme_name() -> str:
         cfg = Config.load()
         if cfg.theme in THEMES:
             return cfg.theme
-    except Exception:
+    except (ImportError, OSError, ValueError):
+        # Config file unreadable or platformdirs misbehaving — fall through to default.
         pass
     return DEFAULT_THEME
 

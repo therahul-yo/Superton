@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from superton import __version__, ui
+from superton import __version__, errors, ui
 from superton.config import MODEL_PROFILES, Config, write_settings
+from superton.logging import get_logger
 from superton.memory import Memory
 from superton.model import Model, ModelError
+
+log = get_logger("shell")
 
 console = ui.console()
 
@@ -74,7 +77,8 @@ class _Status:
     def toolbar_html(self) -> str:
         try:
             n = self.mem.stats()["drawers"]
-        except Exception:
+        except (RuntimeError, KeyError, OSError) as e:
+            log.debug("toolbar stats failed: %s", e)
             n = 0
         t = ui.theme()
         # prompt_toolkit HTML — keep it dim and one-line.
@@ -469,8 +473,13 @@ def _run_import(mem: Memory, spec: str) -> None:
                 f"unknown source: {name}",
                 "choose one of: claude-code, chatgpt <path>, cursor, amp",
             )
+    except (FileNotFoundError, PermissionError, ValueError, RuntimeError) as e:
+        log.error("import %s failed: %s", name, e)
+        errors.render(e)
     except Exception as e:
+        log.exception("import %s crashed", name)
         ui.err(f"import failed: {e}")
+        ui.hint("re-run with [bold]SUPERTON_LOG=debug[/bold] for the traceback")
     ui.blank()
 
 
@@ -755,7 +764,8 @@ def _answer(
             yield from model.generate(prompt, system=system, history=chat_history)
 
         answer = ui.stream_answer(generate_answer())
-    except ModelError:
+    except ModelError as e:
+        log.warning("model backend unavailable during answer: %s", e)
         if hits:
             answer = (
                 "I found related memory, but the model backend is unavailable. "

@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from superton.config import Config
+from superton.logging import get_logger
+
+log = get_logger("memory")
 
 
 @dataclass
@@ -232,6 +235,7 @@ class Memory:
             )
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("mempalace search failed; falling back: %s", e)
             return []
         if not isinstance(res, dict) or res.get("error"):
             if isinstance(res, dict):
@@ -394,6 +398,7 @@ class Memory:
     def forget_source(self, query: str) -> int:
         sources = self.source_matches(query)
         if not sources:
+            log.info("forget_source: no matches for %r", query)
             return 0
         placeholders = ",".join("?" for _ in sources)
         rows = self._db.execute(
@@ -408,6 +413,7 @@ class Memory:
         self._db.commit()
         for drawer_id in drawer_ids:
             self._delete_semantic(drawer_id)
+        log.info("forgot %d drawers across %d source(s)", len(drawer_ids), len(sources))
         return len(drawer_ids)
 
     def forget(self, drawer_id: str) -> bool:
@@ -459,7 +465,9 @@ class Memory:
                 self._semantic_error = None
             except Exception as e:
                 self._semantic_error = str(e)
+                log.error("semantic reindex failed at batch of %d: %s", len(batch), e)
                 break
+        log.info("reindexed %d drawers into semantic store", total)
         return total
 
     def all(self, *, limit: int = 100) -> list[Drawer]:
@@ -508,6 +516,7 @@ class Memory:
             return self._semantic_collection
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("could not open semantic collection: %s", e)
             return None
 
     def _index_semantic(self, drawer: Drawer) -> None:
@@ -528,6 +537,7 @@ class Memory:
             self._semantic_error = None
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("semantic upsert failed for %s: %s", drawer.id[:8], e)
 
     def _search_semantic(self, query: str, *, limit: int) -> list[SearchHit]:
         col = self._semantic(create=False)
@@ -545,6 +555,7 @@ class Memory:
             distances = (getattr(results, "distances", None) or [[]])[0]
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("local semantic query failed: %s", e)
             return []
 
         hits: list[SearchHit] = []
@@ -573,6 +584,7 @@ class Memory:
             self._semantic_error = None
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("semantic delete failed for %s: %s", drawer_id[:8], e)
 
     @staticmethod
     def _row_to_drawer(r: sqlite3.Row) -> Drawer:

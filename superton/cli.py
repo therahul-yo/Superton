@@ -23,12 +23,15 @@ from pathlib import Path
 
 import typer
 
-from superton import __version__, ui
+from superton import __version__, errors, ui
 from superton.blackhole import static_frame
 from superton.config import MODEL_PROFILES, Config, detect_ram_gb, write_settings
 from superton.ingest import chunk_text, read_file, walk
+from superton.logging import get_logger
 from superton.memory import Memory
 from superton.model import Model, ModelError, OllamaError
+
+log = get_logger("cli")
 
 app = typer.Typer(
     name="superton",
@@ -643,7 +646,8 @@ def ask(
         if hits:
             ui.citations(hits[:3])
     except (OllamaError, ModelError) as e:
-        ui.err(f"{e}")
+        log.error("ask failed: %s", e)
+        errors.render(e)
     finally:
         model.close()
         mem.close()
@@ -999,8 +1003,10 @@ def mcp_serve(
     cfg = _cfg()
     try:
         from mempalace.mcp_server import main as mcp_main
-    except Exception as e:
+    except ImportError as e:
+        log.error("mempalace mcp_server import failed: %s", e)
         ui.err("MemPalace MCP server unavailable", str(e))
+        ui.hint("install with [bold]uv pip install mempalace[/bold]")
         raise typer.Exit(1) from e
     ui.section("mcp serve", f"palace: {cfg.semantic_dir}")
     ui.hint("stdio transport · Ctrl+C to stop")
@@ -1020,7 +1026,9 @@ def mcp_serve(
     except SystemExit:
         raise
     except Exception as e:
+        log.exception("mcp server crashed")
         ui.err("mcp server crashed", str(e))
+        ui.hint("re-run with [bold]SUPERTON_LOG=debug[/bold] for the full traceback")
         raise typer.Exit(1) from e
     finally:
         _sys.argv = argv_backup
@@ -1039,7 +1047,8 @@ def dedup(
     cfg = _cfg()
     try:
         from mempalace.dedup import dedup_palace
-    except Exception as e:
+    except ImportError as e:
+        log.error("mempalace.dedup import failed: %s", e)
         ui.err("MemPalace dedup unavailable", str(e))
         raise typer.Exit(1) from e
     ui.section("dedup", f"threshold {threshold:.2f} · {'dry-run' if dry_run else 'APPLY'}")

@@ -8,6 +8,13 @@ from pathlib import Path
 
 from platformdirs import user_data_dir
 
+from superton.logging import get_logger
+
+log = get_logger("config")
+
+VALID_BACKENDS = {"auto", "ollama", "huggingface"}
+VALID_MEMORY_BACKENDS = {"hybrid", "semantic", "mempalace", "sqlite"}
+
 MODEL_PROFILES = {
     "fast": {
         "base_model": "qwen2.5:1.5b-instruct",
@@ -105,8 +112,33 @@ class Config:
         settings = _read_settings(home / "config.toml")
         profile = os.environ.get("SUPERTON_MODEL_PROFILE", settings.get("model_profile", "fast"))
         if profile not in MODEL_PROFILES:
+            log.warning("unknown model_profile=%r, falling back to 'fast'", profile)
             profile = "fast"
         profile_defaults = MODEL_PROFILES[profile]
+
+        model_backend_raw = os.environ.get(
+            "SUPERTON_MODEL_BACKEND",
+            settings.get("model_backend", "auto"),
+        ).lower()
+        if model_backend_raw not in VALID_BACKENDS:
+            log.warning("unknown model_backend=%r, falling back to 'auto'", model_backend_raw)
+            model_backend_raw = "auto"
+
+        memory_backend_raw = os.environ.get(
+            "SUPERTON_MEMORY_BACKEND",
+            settings.get("memory_backend", "hybrid"),
+        ).lower()
+        if memory_backend_raw not in VALID_MEMORY_BACKENDS:
+            log.warning("unknown memory_backend=%r, falling back to 'hybrid'", memory_backend_raw)
+            memory_backend_raw = "hybrid"
+
+        theme = os.environ.get("SUPERTON_THEME", settings.get("theme", "nebula"))
+        # ui.THEMES is the source of truth, but importing ui here would create
+        # a load-order cycle. Whitelist the four shipped themes inline.
+        if theme not in {"nebula", "mono", "solar", "frost"}:
+            log.warning("unknown theme=%r, falling back to 'nebula'", theme)
+            theme = "nebula"
+
         return cls(
             home=home,
             model_profile=profile,
@@ -115,27 +147,18 @@ class Config:
                 "SUPERTON_BASE_MODEL",
                 settings.get("base_model", profile_defaults["base_model"]),
             ),
-            model_backend=os.environ.get(
-                "SUPERTON_MODEL_BACKEND",
-                settings.get("model_backend", "auto"),
-            ).lower(),
+            model_backend=model_backend_raw,
             hf_model=os.environ.get(
                 "SUPERTON_HF_MODEL",
                 settings.get("hf_model", profile_defaults["hf_model"]),
             ),
             ollama_url=os.environ.get("OLLAMA_HOST", settings.get("ollama_url", "http://127.0.0.1:11434")),
-            memory_backend=os.environ.get(
-                "SUPERTON_MEMORY_BACKEND",
-                settings.get("memory_backend", "hybrid"),
-            ).lower(),
+            memory_backend=memory_backend_raw,
             semantic_collection=os.environ.get(
                 "SUPERTON_SEMANTIC_COLLECTION",
                 settings.get("semantic_collection", "superton_drawers"),
             ),
-            theme=os.environ.get(
-                "SUPERTON_THEME",
-                settings.get("theme", "nebula"),
-            ),
+            theme=theme,
         )
 
     @property
