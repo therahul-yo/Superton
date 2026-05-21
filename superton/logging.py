@@ -71,7 +71,10 @@ def configure(*, force: bool = False) -> None:
         root.removeHandler(handler)
 
     root.setLevel(_level_from_env())
-    root.propagate = False
+    # Allow propagation so pytest's caplog and other root handlers see records
+    # — duplicate console output is avoided because Python's default root
+    # logger has no attached handler unless basicConfig was called.
+    root.propagate = True
 
     json_mode = (os.environ.get("SUPERTON_LOG_JSON") or "").strip().lower() in {"1", "true", "yes", "json"}
     formatter: logging.Formatter
