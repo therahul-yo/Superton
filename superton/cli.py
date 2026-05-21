@@ -158,49 +158,27 @@ def _detect_preflight(cfg: Config) -> list[tuple[str, str, str]]:
     pre-flight card so users see the plan before any prompts fire.
 
     Each row is `(status, name, detail)`. `✓` rows are already-done,
-    `→` rows will run, `?` rows we can't tell without poking at
-    a subprocess.
+    `→` rows will run, `?` rows we can't tell yet. Kept network-free
+    on purpose: the actual ollama probe happens in stage 2 with its own
+    spinner. Trying to ping the daemon here would block CI runners
+    where the binary is on PATH but the daemon isn't running.
     """
     rows: list[tuple[str, str, str]] = []
 
-    palace_exists = cfg.palace_dir.exists()
+    palace_exists = (cfg.palace_dir / "drawers.sqlite").exists()
     rows.append((
         "✓" if palace_exists else "→",
         "palace",
         str(cfg.palace_dir),
     ))
 
-    ollama_present = shutil.which("ollama") is not None
-    if ollama_present:
+    if shutil.which("ollama") is not None:
         rows.append(("✓", "ollama", "found on PATH"))
+        rows.append(("?", "base model", f"{cfg.base_model}  (probed in stage 3)"))
+        rows.append(("?", "embed model", f"{cfg.embed_model}  (probed in stage 4)"))
+        rows.append(("?", "Miniton", f"{cfg.model}  (built in stage 5)"))
     else:
         rows.append(("→", "ollama", "will offer to install"))
-
-    if ollama_present:
-        try:
-            model = Model(cfg)
-            base_ok = model.has_model(cfg.base_model)
-            embed_ok = model.has_model(cfg.embed_model)
-            miniton_ok = model.has_model(cfg.model)
-            model.close()
-            rows.append((
-                "✓" if base_ok else "→",
-                "base model",
-                f"{cfg.base_model}  " + ("(present)" if base_ok else "(will pull)"),
-            ))
-            rows.append((
-                "✓" if embed_ok else "→",
-                "embed model",
-                f"{cfg.embed_model}  " + ("(present)" if embed_ok else "(will pull)"),
-            ))
-            rows.append((
-                "✓" if miniton_ok else "→",
-                "Miniton",
-                f"{cfg.model}  " + ("(built)" if miniton_ok else "(will build)"),
-            ))
-        except Exception:  # noqa: BLE001 — model probe is best-effort
-            rows.append(("?", "model probe", "could not query ollama yet"))
-    else:
         rows.append(("?", "base model", "needs ollama"))
         rows.append(("?", "Miniton", "needs ollama"))
 

@@ -116,12 +116,32 @@ def test_init_rejects_unknown_profile_fast(env: Path):
 def test_detect_preflight_marks_existing_palace(env: Path, tmp_path: Path):
     from superton.cli import _detect_preflight
     from superton.config import Config
+    from superton.memory import Memory
 
-    # Create the palace so the helper flags it as existing.
-    (tmp_path / "palace").mkdir(parents=True, exist_ok=True)
+    # A real palace is the sqlite db, not just the directory — create one
+    # via Memory() so the helper sees the same shape it would in production.
     cfg = Config.load()
+    Memory(cfg).close()
     rows = _detect_preflight(cfg)
     assert any(name == "palace" and status == "✓" for status, name, _ in rows)
+
+
+def test_detect_preflight_makes_no_network_calls(env: Path, monkeypatch):
+    """Preflight must stay hermetic: no httpx clients, no subprocesses
+    beyond `shutil.which`. On CI runners where `ollama` is on PATH but
+    the daemon isn't running, pinging it would hang the card.
+    """
+    import httpx
+
+    from superton.cli import _detect_preflight
+    from superton.config import Config
+
+    def _no_client(*args, **kwargs):
+        raise AssertionError("preflight made an httpx call — should be filesystem-only")
+
+    monkeypatch.setattr(httpx, "Client", _no_client)
+    cfg = Config.load()
+    _detect_preflight(cfg)  # must not raise
 
 
 def test_detect_preflight_reports_ollama_state(env: Path):
