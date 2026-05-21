@@ -162,7 +162,7 @@ def test_shell_path_input_ingests_file(cfg: Config, tmp_path: Path):
     note = tmp_path / "resume.txt"
     note.write_text("Alice T projects include SuperTon and MemPalace.", encoding="utf-8")
     mem = Memory(cfg)
-    files, drawers = _ingest_path(mem, note)
+    files, drawers, _deduped = _ingest_path(mem, note)
     assert files == 1
     assert drawers == 1
     assert mem.search("Alice projects")

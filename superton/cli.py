@@ -178,12 +178,16 @@ def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
     return typer.confirm("Pull this model now?", default=True)
 
 
-def _ingest_into_memory(mem: Memory, path: Path, *, wing: str, room: str) -> tuple[int, int, int]:
+def _ingest_into_memory(
+    mem: Memory, path: Path, *, wing: str, room: str
+) -> tuple[int, int, int, int]:
+    """Walk `path`, ingest each file. Returns (files, drawers, skipped, deduped)."""
     files = list(walk(path))
     total_drawers = 0
     skipped = 0
+    deduped = 0
     if not files:
-        return 0, 0, 0
+        return 0, 0, 0, 0
     with ui.progress("ingesting", total=len(files)) as advance:
         for f in files:
             rel = f.relative_to(path) if path.is_dir() else Path(f.name)
@@ -199,9 +203,12 @@ def _ingest_into_memory(mem: Memory, path: Path, *, wing: str, room: str) -> tup
                 continue
             for chunk in chunk_text(text):
                 mem.add(text=chunk, source=str(f), wing=wing, room=room)
-                total_drawers += 1
+                if mem.last_insert_was_new:
+                    total_drawers += 1
+                else:
+                    deduped += 1
             advance(description=f"ingesting  [dim]{rel}[/]")
-    return len(files) - skipped, total_drawers, skipped
+    return len(files) - skipped, total_drawers, skipped, deduped
 
 
 def _build_miniton(cfg: Config, *, yes: bool) -> bool:
@@ -480,10 +487,13 @@ def add(
     cfg = _cfg()
     mem = Memory(cfg)
     ui.section("add", f"{path}  → wing={wing} room={room}")
-    files, total_drawers, _skipped = _ingest_into_memory(mem, path, wing=wing, room=room)
+    files, total_drawers, _skipped, deduped = _ingest_into_memory(mem, path, wing=wing, room=room)
     mem.close()
     ui.blank()
-    ui.ok(f"ingested {total_drawers} drawers", f"from {files} file(s)")
+    summary = f"from {files} file(s)"
+    if deduped:
+        summary += f"  ·  {deduped} deduped"
+    ui.ok(f"ingested {total_drawers} drawers", summary)
 
 
 @app.command()
@@ -514,26 +524,36 @@ def pull(
 
     total_pages = 0
     total_drawers = 0
+    deduped = 0
 
-    async def _run() -> None:
-        nonlocal total_pages, total_drawers
-        async for page in pull_site(
-            url,
-            max_pages=max_pages,
-            render_js=render_js,
-            concurrency=concurrency,
-        ):
-            total_pages += 1
-            for chunk in chunk_text(page.markdown):
-                mem.add(text=chunk, source=page.url, wing=wing, room=room)
-                total_drawers += 1
+    # Live status text is cheap to update; show it from inside the spinner
+    # so a long crawl visibly progresses instead of feeling hung.
+    with ui.spinner(f"pulling {url}") as set_status:
+        async def _run() -> None:
+            nonlocal total_pages, total_drawers, deduped
+            async for page in pull_site(
+                url,
+                max_pages=max_pages,
+                render_js=render_js,
+                concurrency=concurrency,
+            ):
+                total_pages += 1
+                for chunk in chunk_text(page.markdown):
+                    mem.add(text=chunk, source=page.url, wing=wing, room=room)
+                    if mem.last_insert_was_new:
+                        total_drawers += 1
+                    else:
+                        deduped += 1
+                set_status(f"pulling {url}  ·  {total_pages}/{max_pages} pages  ·  {total_drawers} drawers")
 
-    with ui.spinner(f"pulling {url}"):
         asyncio.run(_run())
 
     mem.close()
     ui.blank()
-    ui.ok(f"pulled {total_pages} pages → {total_drawers} drawers")
+    summary = f"pulled {total_pages} pages → {total_drawers} drawers"
+    if deduped:
+        summary += f"  ·  {deduped} deduped"
+    ui.ok(summary)
 
 
 @app.command()
@@ -548,7 +568,7 @@ def refresh(
     removed = 0
     for f in walk(path):
         removed += mem.forget_source(str(f))
-    files, drawers, _skipped = _ingest_into_memory(mem, path, wing=wing, room=room)
+    files, drawers, _skipped, _deduped = _ingest_into_memory(mem, path, wing=wing, room=room)
     mem.close()
     ui.ok(
         f"refreshed {files} file(s)",

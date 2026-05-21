@@ -64,15 +64,40 @@ class _Status:
     """Live state shown in the prompt's bottom toolbar.
 
     Refreshed after every REPL turn. Cheap to compute — just reads the
-    cached config and a small SQLite count.
+    cached config and a small SQLite count. The Ollama probe is cached
+    for a few seconds so toolbar refresh doesn't hammer the daemon.
     """
 
-    def __init__(self, cfg: Config, mem: Memory) -> None:
+    _BACKEND_TTL = 4.0  # seconds
+
+    def __init__(self, cfg: Config, mem: Memory, model: Model | None = None) -> None:
         self.cfg = cfg
         self.mem = mem
+        self.model = model
+        self._backend_last_check: float = 0.0
+        self._backend_online: bool = False
 
-    def refresh(self, cfg: Config) -> None:
+    def refresh(self, cfg: Config, model: Model | None = None) -> None:
         self.cfg = cfg
+        if model is not None:
+            self.model = model
+        # Force a recheck of backend status on the next toolbar refresh.
+        self._backend_last_check = 0.0
+
+    def _backend_status(self) -> str:
+        """Cached probe so the toolbar refresh stays under a millisecond."""
+        import time as _time
+
+        if self.model is None:
+            return "?"
+        if _time.time() - self._backend_last_check > self._BACKEND_TTL:
+            try:
+                self._backend_online = self.model.ping()
+            except Exception as e:  # noqa: BLE001
+                log.debug("backend ping failed: %s", e)
+                self._backend_online = False
+            self._backend_last_check = _time.time()
+        return "online" if self._backend_online else "offline"
 
     def toolbar_html(self) -> str:
         try:
@@ -81,10 +106,12 @@ class _Status:
             log.debug("toolbar stats failed: %s", e)
             n = 0
         t = ui.theme()
+        backend = self._backend_status()
+        glyph = "●" if backend == "online" else ("○" if backend == "offline" else "·")
         # prompt_toolkit HTML — keep it dim and one-line.
         return (
             f"<bottom-toolbar.text>"
-            f"palace: {n} drawers · model: {self.cfg.model_profile} · "
+            f"{glyph} {backend} · palace: {n} drawers · model: {self.cfg.model_profile} · "
             f"theme: {t.name}  ·  /help · /quit"
             f"</bottom-toolbar.text>"
         )
@@ -236,11 +263,13 @@ def _path_from_input(text: str) -> Path | None:
     return path if path.exists() else None
 
 
-def _ingest_path(mem: Memory, path: Path) -> tuple[int, int]:
+def _ingest_path(mem: Memory, path: Path) -> tuple[int, int, int]:
+    """Ingest a path. Returns (files, drawers, deduped)."""
     from superton.ingest import chunk_text, read_file, walk
 
     files = 0
     drawers = 0
+    deduped = 0
     for file in walk(path):
         try:
             body = read_file(file)
@@ -250,8 +279,11 @@ def _ingest_path(mem: Memory, path: Path) -> tuple[int, int]:
         files += 1
         for chunk in chunk_text(body):
             mem.add(text=chunk, source=str(file))
-            drawers += 1
-    return files, drawers
+            if mem.last_insert_was_new:
+                drawers += 1
+            else:
+                deduped += 1
+    return files, drawers, deduped
 
 
 def _query_tokens(query: str) -> set[str]:
@@ -790,7 +822,7 @@ def run() -> None:
     ui.set_theme(cfg.theme)
     mem = Memory(cfg)
     model = Model(cfg)
-    status = _Status(cfg, mem)
+    status = _Status(cfg, mem, model)
     history: list[tuple[str, str]] = []
     try:
         _print_intro(cfg, mem)
@@ -836,7 +868,7 @@ def run() -> None:
                 cfg = _switch_model(text.removeprefix("/model ").strip())
                 model.close()
                 model = Model(cfg)
-                status.refresh(cfg)
+                status.refresh(cfg, model)
                 continue
             if text == "/theme":
                 _print_themes(cfg)
@@ -876,7 +908,7 @@ def run() -> None:
                 for file in path.rglob("*") if path.is_dir() else [path]:
                     if file.is_file():
                         removed += mem.forget_source(str(file))
-                files, drawers = _ingest_path(mem, path)
+                files, drawers, _deduped = _ingest_path(mem, path)
                 ui.blank()
                 ui.ok(
                     f"refreshed {files} file(s)",
@@ -904,8 +936,11 @@ def run() -> None:
                 continue
             inline_path = _path_from_input(text)
             if inline_path is not None:
-                files, drawers = _ingest_path(mem, inline_path)
-                ui.ok(f"ingested {drawers} drawers", f"from {files} file(s)")
+                files, drawers, deduped = _ingest_path(mem, inline_path)
+                suffix = f"from {files} file(s)"
+                if deduped:
+                    suffix += f"  ·  {deduped} deduped"
+                ui.ok(f"ingested {drawers} drawers", suffix)
                 continue
             if text == "/search":
                 ui.blank()
@@ -930,9 +965,12 @@ def run() -> None:
                     ui.warn(f"not found: {path}")
                     ui.blank()
                     continue
-                files, drawers = _ingest_path(mem, path)
+                files, drawers, deduped = _ingest_path(mem, path)
                 ui.blank()
-                ui.ok(f"ingested {drawers} drawers", f"from {files} file(s)")
+                suffix = f"from {files} file(s)"
+                if deduped:
+                    suffix += f"  ·  {deduped} deduped"
+                ui.ok(f"ingested {drawers} drawers", suffix)
                 ui.blank()
                 continue
             _answer_text = _answer(mem, model, text, history=history)

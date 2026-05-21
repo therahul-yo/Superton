@@ -293,12 +293,23 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None, a
 
 @contextmanager
 def spinner(label: str):
-    """Show a Rich spinner while a block of work runs."""
+    """Show a Rich spinner while a block of work runs.
+
+    Yields a `set_status(label)` callable so long-running work can update
+    the spinner text live (e.g. `pulling … 42/100 pages`). The setter is
+    a no-op in non-terminal contexts.
+    """
     if not _console.is_terminal:
-        yield
+        def _noop(_label: str) -> None:
+            return None
+
+        yield _noop
         return
-    with _console.status(f"[{_current.muted}]{label}[/]", spinner="dots"):
-        yield
+    with _console.status(f"[{_current.muted}]{label}[/]", spinner="dots") as status:
+        def _set(new_label: str) -> None:
+            status.update(f"[{_current.muted}]{new_label}[/]")
+
+        yield _set
 
 
 # --- domain helpers -----------------------------------------------------------

@@ -153,7 +153,10 @@ class Memory:
         # semantic upsert too — it's idempotent but doing it for every
         # duplicate during a re-ingest is wasted compute (and re-runs all
         # the embedding model work). Return the existing drawer so callers
-        # still see a stable Drawer object.
+        # still see a stable Drawer object. `cur.rowcount` is stashed so the
+        # in-memory dedup counter (used by ingest UI) can read it without
+        # changing the public method signature.
+        self._last_insert_was_new = cur.rowcount > 0
         if cur.rowcount == 0:
             existing = self.get(d.id)
             if existing is not None:
@@ -161,6 +164,15 @@ class Memory:
             return d
         self._index_semantic(d)
         return d
+
+    @property
+    def last_insert_was_new(self) -> bool:
+        """True iff the most recent `add()` actually inserted a new drawer.
+
+        Read this immediately after `add()` to track dedup hits without
+        changing the method's return type.
+        """
+        return getattr(self, "_last_insert_was_new", True)
 
     def search(self, query: str, *, limit: int = 5) -> list[SearchHit]:
         # Phase A: prefer MemPalace's benchmarked searcher (hybrid vector + BM25
