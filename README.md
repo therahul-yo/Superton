@@ -128,10 +128,12 @@ optional Hugging Face Inference fallback. Packaging with
 ### From GitHub
 
 ```bash
-# requires Python 3.11+ and uv
-uv tool install "git+https://github.com/therahul-yo/Superton.git"
+curl -LsSf https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh
 superton init
 ```
+
+The installer requires Python 3.11+. It installs `uv` if needed, then installs
+SuperTon from GitHub as a uv tool.
 
 ### From A Local Checkout
 

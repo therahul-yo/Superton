@@ -1,6 +1,6 @@
 [project]
 name = "superton"
-version = "0.1.2a0"
+version = "0.1.3a0"
 description = "A tiny local LLM with infinite memory. Your second brain that never forgets."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -73,6 +73,7 @@ include = [
     "/tests",
     "/README.md",
     "/LICENSE",
+    "/install.sh",
     "/Modelfile",
     "/pyproject.toml",
     "/uv.lock",
