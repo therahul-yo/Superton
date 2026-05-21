@@ -20,18 +20,18 @@ def test_pill_unknown_kind_falls_back_to_neutral():
 
 def test_status_pills_includes_drawer_count():
     class _Cfg:
-        model_profile = "fast"
+        model_profile = "proton"
 
     pills = ui.status_pills(_Cfg(), {"drawers": 42})
     plain = pills.plain
     assert "nebula" in plain or ui.theme().name in plain
-    assert "miniton:fast" in plain
+    assert "miniton:proton" in plain
     assert "42" in plain
 
 
 def test_status_pills_shows_semantic_warning():
     class _Cfg:
-        model_profile = "fast"
+        model_profile = "proton"
 
     pills = ui.status_pills(_Cfg(), {"drawers": 1, "semantic_error": "boom"})
     assert "semantic offline" in pills.plain

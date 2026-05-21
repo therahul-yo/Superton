@@ -192,7 +192,7 @@ superton doctor
 superton reindex
 
 # switch model / theme / palette
-superton model better
+superton model neutron
 superton theme solar
 superton welcome                 # anytime tour of what's installed
 
@@ -275,7 +275,7 @@ Features:
 | `superton stats` | Palace statistics |
 | `superton doctor` | Check local runtime, memory, theme, and model setup |
 | `superton reindex` | Rebuild semantic index from stored drawers |
-| `superton model [fast\|better\|strong]` | Show or switch Miniton model profile |
+| `superton model [photon\|proton\|neutron]` | Show or switch Miniton model profile |
 | `superton theme [nebula\|mono\|solar\|frost]` | Show or switch the CLI theme |
 | `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
 | `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
@@ -385,24 +385,36 @@ tool on your machine.
 ## Model Strategy
 
 `Miniton` is SuperTon's local answer model. The default public/runtime tag is
-`miniton`; by default it is built from `qwen2.5:1.5b-instruct` via Ollama.
-You can override the base with `SUPERTON_BASE_MODEL`. Exact recall comes from
-the palace drawers, not from model weights.
+`miniton`; by default it is built from `qwen3.5:4b` via Ollama. You can
+override the base with `SUPERTON_BASE_MODEL`. Exact recall comes from the
+palace drawers, not from model weights — the model only has to phrase the
+answer.
 
-Model profiles:
+### Model profiles
 
-| Profile | Ollama base | Use case |
-|---|---|---|
-| `fast` | `qwen2.5:1.5b-instruct` | lowest memory, quickest startup |
-| `better` | `qwen2.5:3b-instruct` | stronger answers on laptops |
-| `strong` | `qwen2.5:7b-instruct` | best local quality, heavier |
+Particle-physics names rhyme with the SuperTon / Miniton vocabulary:
+
+| Profile | Ollama base | Params | Download | RAM | Use case |
+|---|---|---|---|---|---|
+| `photon` | `qwen3.5:0.8b` | 0.8B | ~1.0 GB | 4 GB | runs anywhere, ideal for old laptops |
+| `proton` *(default)* | `qwen3.5:4b` | 4B | ~3.4 GB | 8 GB | balanced everyday use |
+| `neutron` | `qwen3.5:9b` | 9B | ~6.6 GB | 14 GB | best local quality, wants real RAM |
+
+All three pull Qwen 3.5 weights (released Feb 2026 — native tool calling,
+256K context, instruction-tuned). The Modelfile wraps them with SuperTon's
+SYSTEM prompt and pins `think false`, `num_ctx 16384`, and a low
+temperature so answers stay terse and citation-friendly.
 
 Switch profile:
 
 ```bash
-superton model better
+superton model neutron
 superton init --yes
 ```
+
+Users coming from the Qwen 2.5 era keep their old config keys — `fast`,
+`better`, and `strong` are transparently migrated to `photon`, `proton`,
+and `neutron` on next launch with a logged warning.
 
 If Ollama is not available, SuperTon can use Hugging Face Inference as a fallback:
 
@@ -434,7 +446,7 @@ four characters so the report is shareable.
 |---|---|---|
 | `SUPERTON_HOME` | override palace location | platform-specific |
 | `SUPERTON_THEME` | `nebula \| mono \| solar \| frost` | `nebula` |
-| `SUPERTON_MODEL_PROFILE` | `fast \| better \| strong` | `fast` |
+| `SUPERTON_MODEL_PROFILE` | `photon \| proton \| neutron` | `proton` |
 | `SUPERTON_MODEL_BACKEND` | `auto \| ollama \| huggingface` | `auto` |
 | `SUPERTON_MEMORY_BACKEND` | `hybrid \| semantic \| mempalace \| sqlite` | `hybrid` |
 | `SUPERTON_BASE_MODEL` | override the Ollama base tag | profile default |

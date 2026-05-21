@@ -97,7 +97,7 @@ def _render_modelfile(template: Path, cfg: Config) -> Path:
     return rendered
 
 
-def _pick_model_profile(*, default: str = "fast") -> str:
+def _pick_model_profile(*, default: str = "proton") -> str:
     """Interactive picker showing size + RAM-fit per profile.
 
     Renders one rounded card per profile (active card border accents in
@@ -950,7 +950,7 @@ def model_profile(
         ui.print_table(table)
         return
     if profile not in MODEL_PROFILES:
-        ui.err("unknown profile", "choose fast, better, or strong")
+        ui.err("unknown profile", "choose " + " | ".join(MODEL_PROFILES))
         raise typer.Exit(1)
     selected = MODEL_PROFILES[profile]
     write_settings(

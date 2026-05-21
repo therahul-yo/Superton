@@ -27,7 +27,7 @@ def test_invalid_model_profile_falls_back_to_fast(home: Path, monkeypatch, caplo
     monkeypatch.setenv("SUPERTON_MODEL_PROFILE", "ultra")
     with caplog.at_level(logging.WARNING, logger="superton.config"):
         cfg = Config.load()
-    assert cfg.model_profile == "fast"
+    assert cfg.model_profile == "proton"
     assert any("ultra" in r.message for r in caplog.records)
 
 
@@ -74,12 +74,12 @@ def test_all_valid_memory_backends_load(home: Path, monkeypatch):
 
 
 def test_write_settings_roundtrips(home: Path, monkeypatch):
-    write_settings(home, theme="solar", model_profile="better")
+    write_settings(home, theme="solar", model_profile="neutron")
     monkeypatch.delenv("SUPERTON_THEME", raising=False)
     monkeypatch.delenv("SUPERTON_MODEL_PROFILE", raising=False)
     cfg = Config.load()
     assert cfg.theme == "solar"
-    assert cfg.model_profile == "better"
+    assert cfg.model_profile == "neutron"
 
 
 def test_write_settings_overwrites_existing(home: Path, monkeypatch):
@@ -97,7 +97,29 @@ def test_detect_ram_returns_float_or_none():
 
 
 def test_model_profiles_has_three_tiers():
-    assert set(MODEL_PROFILES) == {"fast", "better", "strong"}
+    assert set(MODEL_PROFILES) == {"photon", "proton", "neutron"}
     for data in MODEL_PROFILES.values():
         assert "base_model" in data
         assert "min_ram_gb" in data
+
+
+def test_model_profiles_use_qwen35():
+    """The Qwen 2.5 era is over — every shipped profile points at Qwen 3.5."""
+    for data in MODEL_PROFILES.values():
+        assert "qwen3.5" in data["base_model"].lower()
+
+
+@pytest.mark.parametrize(
+    "legacy, modern",
+    [("fast", "photon"), ("better", "proton"), ("strong", "neutron")],
+)
+def test_legacy_profile_names_migrate(
+    home: Path, monkeypatch: pytest.MonkeyPatch, caplog, legacy: str, modern: str
+):
+    """Users carrying `model_profile = "fast"` in their config from the
+    Qwen 2.5 era should be transparently upgraded to the new tier names."""
+    monkeypatch.setenv("SUPERTON_MODEL_PROFILE", legacy)
+    with caplog.at_level(logging.WARNING, logger="superton.config"):
+        cfg = Config.load()
+    assert cfg.model_profile == modern
+    assert any("legacy profile" in r.message for r in caplog.records)

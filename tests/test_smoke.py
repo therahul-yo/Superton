@@ -38,8 +38,8 @@ def test_chunk_long_text():
 
 def test_model_defaults_are_miniton(cfg: Config):
     assert cfg.model == "miniton"
-    assert cfg.base_model == "qwen2.5:1.5b-instruct"
-    assert cfg.model_profile == "fast"
+    assert cfg.base_model == "qwen3.5:4b"
+    assert cfg.model_profile == "proton"
     assert cfg.memory_backend == "sqlite"
 
 
@@ -49,14 +49,14 @@ def test_model_profile_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("SUPERTON_HOME", str(tmp_path))
     write_settings(
         tmp_path,
-        model_profile="better",
-        base_model="qwen2.5:3b-instruct",
-        hf_model="Qwen/Qwen2.5-3B-Instruct",
+        model_profile="neutron",
+        base_model="qwen3.5:9b",
+        hf_model="Qwen/Qwen3.5-9B",
     )
     cfg = Config.load()
-    assert cfg.model_profile == "better"
-    assert cfg.base_model == "qwen2.5:3b-instruct"
-    assert cfg.hf_model == "Qwen/Qwen2.5-3B-Instruct"
+    assert cfg.model_profile == "neutron"
+    assert cfg.base_model == "qwen3.5:9b"
+    assert cfg.hf_model == "Qwen/Qwen3.5-9B"
 
 
 def test_modelfile_render_uses_configured_base(cfg: Config, tmp_path: Path):
@@ -65,7 +65,7 @@ def test_modelfile_render_uses_configured_base(cfg: Config, tmp_path: Path):
     template = tmp_path / "Modelfile"
     template.write_text("FROM placeholder\nSYSTEM \"\"\"hello\"\"\"\n", encoding="utf-8")
     rendered = _render_modelfile(template, cfg)
-    assert rendered.read_text(encoding="utf-8").startswith("FROM qwen2.5:1.5b-instruct\n")
+    assert rendered.read_text(encoding="utf-8").startswith("FROM qwen3.5:4b\n")
 
 
 def test_confirm_pull_yes_skips_prompt():

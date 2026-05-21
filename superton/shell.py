@@ -447,7 +447,7 @@ def _run_import(mem: Memory, spec: str) -> None:
 def _switch_model(profile: str) -> Config:
     if profile not in MODEL_PROFILES:
         ui.blank()
-        ui.warn("choose one of: fast, better, strong")
+        ui.warn("choose one of: " + ", ".join(MODEL_PROFILES))
         ui.blank()
         return Config.load()
     selected = MODEL_PROFILES[profile]
@@ -579,7 +579,7 @@ def run() -> None:
                     "ingest: /add <path> · /import claude-code|chatgpt|cursor|amp · "
                     "/refresh <path>\n"
                     "search: /search <query> · /sources · /forget-source <name>\n"
-                    "config: /model [fast|better|strong] · /theme · /reindex\n"
+                    "config: /model [photon|proton|neutron] · /theme · /reindex\n"
                     "system: /doctor · /stats · /clear · /quit"
                 )
                 continue
