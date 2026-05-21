@@ -1100,26 +1100,30 @@ def _tool_uninstall_command() -> list[str]:
     return [sys.executable, "-m", "pip", "uninstall", "-y", "superton"]
 
 
+def _uninstall_model_names(cfg: Config, *, models: bool, all_models: bool) -> list[str]:
+    if not models:
+        return []
+    names = [cfg.model]
+    if all_models:
+        names.extend([cfg.base_model, cfg.embed_model])
+    return list(dict.fromkeys(names))
+
+
 @app.command()
 def uninstall(
     yes: bool = typer.Option(False, "--yes", "-y", help="confirm removal prompts"),
     data: bool = typer.Option(True, "--data/--keep-data", help="remove the local palace and config"),
-    models: bool = typer.Option(True, "--models/--keep-models", help="remove the SuperTon Ollama model"),
+    models: bool = typer.Option(True, "--models/--keep-models", help="remove SuperTon Ollama models"),
     all_models: bool = typer.Option(
-        False,
-        "--all-models",
-        help="also remove the configured base and embedding Ollama models",
+        True,
+        "--all-models/--keep-base-models",
+        help="remove the configured base and embedding Ollama models",
     ),
     tool: bool = typer.Option(False, "--tool", help="also uninstall the SuperTon CLI tool"),
 ) -> None:
     """Remove SuperTon local data, models, and optionally the installed CLI tool."""
     cfg = _cfg()
-    model_names: list[str] = []
-    if models:
-        model_names.append(cfg.model)
-        if all_models:
-            model_names.extend([cfg.base_model, cfg.embed_model])
-        model_names = list(dict.fromkeys(model_names))
+    model_names = _uninstall_model_names(cfg, models=models, all_models=all_models)
 
     ui.section("uninstall superton")
     if data:

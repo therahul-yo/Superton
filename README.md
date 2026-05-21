@@ -280,7 +280,7 @@ Features:
 | `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
 | `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
 | `superton close` | Stop running SuperTon model runners |
-| `superton uninstall --yes --tool --all-models` | Remove local SuperTon data, Ollama models, and CLI install |
+| `superton uninstall --yes --tool` | Remove local SuperTon data, Ollama models, and CLI install |
 | `superton import claude-code` | Import Claude Code session history |
 | `superton import chatgpt <export>` | Import ChatGPT `conversations.json` exports |
 | `superton import cursor` | Import readable Cursor thread/log files |

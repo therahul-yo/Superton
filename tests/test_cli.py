@@ -102,6 +102,19 @@ def test_uninstall_removes_data_when_confirmed(env: Path, monkeypatch):
     assert not env.exists()
 
 
+def test_uninstall_model_names_include_dependencies_by_default(env: Path):
+    from superton.cli import _uninstall_model_names
+    from superton.config import Config
+
+    cfg = Config.load()
+    assert _uninstall_model_names(cfg, models=True, all_models=True) == [
+        "miniton",
+        "qwen3.5:4b",
+        "nomic-embed-text",
+    ]
+    assert _uninstall_model_names(cfg, models=True, all_models=False) == ["miniton"]
+
+
 def test_init_shows_preflight_card(env: Path):
     result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
     assert result.exit_code == 0
