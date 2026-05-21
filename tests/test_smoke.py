@@ -106,6 +106,43 @@ def test_model_stop_calls_ollama(cfg: Config, monkeypatch: pytest.MonkeyPatch):
     model.close()
 
 
+def test_model_chat_payload_disables_thinking_and_caps_output(cfg: Config, monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def iter_lines(self):
+            yield '{"message":{"content":"ok"},"done":false}'
+            yield '{"done":true}'
+
+    class Stream:
+        def __enter__(self):
+            return Response()
+
+        def __exit__(self, *args):
+            return False
+
+    class Client:
+        payload = None
+
+        def stream(self, method, path, json):
+            self.payload = json
+            return Stream()
+
+        def close(self):
+            pass
+
+    model = Model(cfg)
+    client = Client()
+    model._client = client
+    monkeypatch.setattr(model, "backend", lambda: "ollama")
+
+    assert "".join(model.generate("hello")) == "ok"
+    assert client.payload["think"] is False
+    assert client.payload["options"]["num_predict"] == 512
+    model.close()
+
+
 def test_shell_greeting_does_not_dump_memory(cfg: Config, capsys: pytest.CaptureFixture):
     from superton.shell import _answer
 

@@ -31,11 +31,13 @@ def test_ram_bar_fits_shows_filled_segments():
     plain = out.plain
     assert "■" in plain
     assert "fits" in plain
+    assert out.spans[0].style == ui.INSTALL_GREEN
 
 
 def test_ram_bar_tight_marks_warning():
     out = ui.ram_bar(used_gb=4.0, recommended_gb=16.0, width=4)
     assert "tight" in out.plain
+    assert out.spans[0].style == ui.INSTALL_ORANGE
 
 
 def test_ram_bar_width_respected():

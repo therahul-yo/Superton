@@ -156,6 +156,11 @@ _console = Console()
 _err_console = Console(stderr=True)
 _current: Theme = THEMES[_resolve_theme_name()]
 
+INSTALL_YELLOW = "#FFD93D"
+INSTALL_ORANGE = "#FFB02E"
+INSTALL_GREEN = "#42D66B"
+INSTALL_RED = "#F0471F"
+
 
 def console() -> Console:
     return _console
@@ -837,22 +842,22 @@ def stage(title: str, *, step: int | None = None, total: int | None = None):
     """
     if step is not None and total is not None:
         header = (
-            f"[{_current.primary}]→[/] "
+            f"[{INSTALL_YELLOW}]→[/] "
             f"[{_current.muted}][{step}/{total}][/] {title}"
         )
     else:
-        header = f"[{_current.primary}]→[/] {title}"
+        header = f"[{INSTALL_YELLOW}]→[/] {title}"
     _console.print(header)
     try:
         yield
     except Exception:
-        _console.print(f"  [{_current.error}]✗ {title} failed[/]")
+        _console.print(f"  [{INSTALL_RED}]✗ {title} failed[/]")
         raise
 
 
 def stage_ok(msg: str) -> None:
     """Indented success line paired with the preceding `stage()`."""
-    _console.print(f"  [{_current.success}]✓[/] {msg}")
+    _console.print(f"  [{INSTALL_GREEN}]✓[/] {msg}")
 
 
 def stage_warn(msg: str, hint: str | None = None) -> None:
@@ -860,7 +865,7 @@ def stage_warn(msg: str, hint: str | None = None) -> None:
     same dim style as `ui.hint()` so the user always sees a recovery
     suggestion right next to the problem.
     """
-    _console.print(f"  [{_current.warning}]![/] {msg}")
+    _console.print(f"  [{INSTALL_ORANGE}]![/] {msg}")
     if hint:
         _console.print(f"    [{_current.muted}]↳ {hint}[/]")
 
@@ -889,7 +894,7 @@ def ram_bar(used_gb: float | None, recommended_gb: float, *, width: int = 6) -> 
     filled = max(1, int(ratio * width))
     empty = width - filled
     fit = used_gb >= recommended_gb
-    bar_color = _current.success if fit else _current.warning
+    bar_color = INSTALL_GREEN if fit else INSTALL_ORANGE
     out.append("■" * filled, style=bar_color)
     out.append("□" * empty, style=_current.muted)
     out.append(
@@ -914,8 +919,8 @@ def preflight_card(
     than a wall of prompts.
     """
     icon_styles = {
-        "✓": _current.success,
-        "→": _current.primary,
+        "✓": INSTALL_GREEN,
+        "→": INSTALL_YELLOW,
         "?": _current.muted,
         "-": _current.muted,
     }
@@ -932,7 +937,7 @@ def preflight_card(
     _console.print(
         Panel(
             body,
-            title=Text(f"▸ {title}", style=f"bold {_current.primary}"),
+            title=Text(f"▸ {title}", style=f"bold {INSTALL_YELLOW}"),
             title_align="left",
             border_style=_current.rule,
             padding=(0, 1),
@@ -951,7 +956,7 @@ def ready_card(cfg, stats: dict) -> None:
     not a help screen.
     """
     body = Text()
-    body.append("SuperTon is ready.\n", style=f"bold {_current.primary}")
+    body.append("SuperTon is ready.\n", style=f"bold {INSTALL_YELLOW}")
     body.append("\n")
     body.append_text(status_pills(cfg, stats))
     body.append("\n\n")
@@ -974,19 +979,20 @@ def ready_card(cfg, stats: dict) -> None:
     body.append("# verify install + show recovery hints\n", style=_current.muted)
     body.append("\n")
     body.append("palace at  ", style=_current.muted)
-    body.append(f"{cfg.palace_dir}", style=_current.muted)
+    body.append_text(Text(f"{cfg.palace_dir}", style=_current.muted, overflow="fold"))
 
     _console.print(
         Panel(
             body,
-            title=Text("ready", style=f"bold {_current.primary}"),
+            title=Text("ready", style=f"bold {INSTALL_YELLOW}"),
             title_align="left",
-            border_style=_current.primary,
+            border_style=INSTALL_YELLOW,
             padding=(1, 2),
             expand=False,
             box=box.ROUNDED,
         )
     )
+    _console.print(Text(f"{cfg.palace_dir}", style=_current.muted), soft_wrap=True)
 
 
 def profile_card(
@@ -1024,7 +1030,7 @@ def profile_card(
     _console.print(
         Panel(
             body,
-            border_style=_current.primary if selected else _current.rule,
+            border_style=INSTALL_YELLOW if selected else _current.rule,
             padding=(0, 1),
             expand=False,
             box=box.ROUNDED,

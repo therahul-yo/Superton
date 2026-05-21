@@ -131,7 +131,15 @@ class Model:
             messages.append(msg)
         messages.append({"role": "user", "content": prompt})
 
-        payload = {"model": self.cfg.model, "messages": messages, "stream": True}
+        payload = {
+            "model": self.cfg.model,
+            "messages": messages,
+            "stream": True,
+            # Qwen reasoning control belongs on the Ollama chat request. It is
+            # not a valid Modelfile PARAMETER on current Ollama builds.
+            "think": False,
+            "options": {"num_predict": 512},
+        }
         try:
             with self._client.stream("POST", "/api/chat", json=payload) as r:
                 r.raise_for_status()
