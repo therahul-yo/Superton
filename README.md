@@ -289,6 +289,26 @@ Features:
 | `superton tui` | Launch the full-screen Textual TUI (requires `[tui]` extra) |
 | `superton` | Launch the interactive CLI shell |
 
+## Uninstall
+
+For a full local cleanup, run:
+
+```bash
+superton uninstall --yes --tool
+```
+
+This removes:
+
+- SuperTon palace data and config from the user data directory
+- the `miniton` Ollama model
+- the configured base model, such as `qwen3.5:0.8b`, `qwen3.5:4b`, or `qwen3.5:9b`
+- the embedding model, `nomic-embed-text`
+- the installed `superton` CLI tool when it was installed through uv, pipx, or pip
+
+Use `--keep-data` to keep the palace, `--keep-models` to skip all Ollama model
+removal, or `--keep-base-models` to remove only `miniton` while preserving the
+base and embedding models.
+
 ## Architecture
 
 ```
