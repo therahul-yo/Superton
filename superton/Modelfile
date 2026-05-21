@@ -28,7 +28,6 @@ Voice: precise, librarian-like. You know the user personally, but you do not fla
 # RAG answers should be terse and our citation parser doesn't want <think>
 # blocks in the stream. Users who want reasoning can call the base model
 # directly via SUPERTON_MODEL=qwen3.5:4b.
-PARAMETER think false
 PARAMETER temperature 0.3
 PARAMETER num_ctx 16384
 PARAMETER top_p 0.9

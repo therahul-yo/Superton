@@ -91,6 +91,17 @@ def test_doctor_runs(env: Path):
     assert "doctor" in result.stdout or "home" in result.stdout
 
 
+def test_uninstall_removes_data_when_confirmed(env: Path, monkeypatch):
+    monkeypatch.setattr("superton.cli.shutil.which", lambda name: None)
+    (env / "palace").mkdir(parents=True)
+    (env / "config.toml").write_text('theme = "mono"\n', encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["uninstall", "--yes", "--keep-models"])
+
+    assert result.exit_code == 0
+    assert not env.exists()
+
+
 def test_init_shows_preflight_card(env: Path):
     result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
     assert result.exit_code == 0

@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import typer
@@ -1085,6 +1086,82 @@ def close_models(
     if force_daemon:
         ui.warn("force-stopping ollama daemon")
         subprocess.run(["pkill", "-f", "ollama serve"], check=False)
+
+
+def _tool_uninstall_command() -> list[str]:
+    """Best-effort command for removing the installed SuperTon CLI."""
+    exe = shutil.which("superton")
+    if exe:
+        exe_path = Path(exe).resolve()
+        if "uv/tools/superton" in str(exe_path) and shutil.which("uv"):
+            return ["uv", "tool", "uninstall", "superton"]
+        if shutil.which("pipx"):
+            return ["pipx", "uninstall", "superton"]
+    return [sys.executable, "-m", "pip", "uninstall", "-y", "superton"]
+
+
+@app.command()
+def uninstall(
+    yes: bool = typer.Option(False, "--yes", "-y", help="confirm removal prompts"),
+    data: bool = typer.Option(True, "--data/--keep-data", help="remove the local palace and config"),
+    models: bool = typer.Option(True, "--models/--keep-models", help="remove the SuperTon Ollama model"),
+    all_models: bool = typer.Option(
+        False,
+        "--all-models",
+        help="also remove the configured base and embedding Ollama models",
+    ),
+    tool: bool = typer.Option(False, "--tool", help="also uninstall the SuperTon CLI tool"),
+) -> None:
+    """Remove SuperTon local data, models, and optionally the installed CLI tool."""
+    cfg = _cfg()
+    model_names: list[str] = []
+    if models:
+        model_names.append(cfg.model)
+        if all_models:
+            model_names.extend([cfg.base_model, cfg.embed_model])
+        model_names = list(dict.fromkeys(model_names))
+
+    ui.section("uninstall superton")
+    if data:
+        ui.step(f"remove data: {cfg.home}")
+    if model_names:
+        ui.step("remove ollama models: " + ", ".join(model_names))
+    if tool:
+        ui.step("remove CLI tool: " + " ".join(_tool_uninstall_command()))
+    if not any((data, model_names, tool)):
+        ui.warn("nothing selected for removal")
+        return
+
+    if not yes and not typer.confirm("Remove selected SuperTon files/models?", default=False):
+        ui.warn("uninstall cancelled")
+        return
+
+    if model_names:
+        if shutil.which("ollama") is None:
+            ui.warn("ollama not found; skipped model removal")
+        else:
+            model = Model(cfg)
+            for name in model_names:
+                model.stop(name)
+                result = subprocess.run(["ollama", "rm", name], check=False)
+                if result.returncode == 0:
+                    ui.ok(f"removed model {name}")
+                else:
+                    ui.warn(f"model not removed: {name}")
+            model.close()
+
+    if data and cfg.home.exists():
+        shutil.rmtree(cfg.home)
+        ui.ok(f"removed {cfg.home}")
+    elif data:
+        ui.step(f"not found: {cfg.home}")
+
+    if tool:
+        result = subprocess.run(_tool_uninstall_command(), check=False)
+        if result.returncode == 0:
+            ui.ok("removed SuperTon CLI tool")
+        else:
+            ui.warn("CLI tool uninstall command failed")
 
 
 import_app = typer.Typer(help="Import conversations from other AI tools.")
