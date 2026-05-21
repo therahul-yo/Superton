@@ -89,3 +89,45 @@ def test_doctor_runs(env: Path):
     result = CliRunner().invoke(app, ["doctor"])
     assert result.exit_code == 0
     assert "doctor" in result.stdout or "home" in result.stdout
+
+
+def test_init_shows_preflight_card(env: Path):
+    result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
+    assert result.exit_code == 0
+    assert "about to do" in result.stdout
+    # Stage progress indicator visible.
+    assert "[1/" in result.stdout
+    # Final ready card visible.
+    assert "ready" in result.stdout
+
+
+def test_init_rejects_unknown_theme_fast(env: Path):
+    # Bad theme should exit non-zero before doing any work (no palace dir
+    # created beyond what the cfg accessor already does).
+    result = CliRunner().invoke(app, ["init", "--no-model", "-y", "--theme", "neopunk"])
+    assert result.exit_code == 1
+
+
+def test_init_rejects_unknown_profile_fast(env: Path):
+    result = CliRunner().invoke(app, ["init", "--no-model", "-y", "--model", "huge"])
+    assert result.exit_code == 1
+
+
+def test_detect_preflight_marks_existing_palace(env: Path, tmp_path: Path):
+    from superton.cli import _detect_preflight
+    from superton.config import Config
+
+    # Create the palace so the helper flags it as existing.
+    (tmp_path / "palace").mkdir(parents=True, exist_ok=True)
+    cfg = Config.load()
+    rows = _detect_preflight(cfg)
+    assert any(name == "palace" and status == "✓" for status, name, _ in rows)
+
+
+def test_detect_preflight_reports_ollama_state(env: Path):
+    from superton.cli import _detect_preflight
+    from superton.config import Config
+
+    cfg = Config.load()
+    rows = _detect_preflight(cfg)
+    assert any(name == "ollama" for _, name, _ in rows)

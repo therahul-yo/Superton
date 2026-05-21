@@ -98,26 +98,29 @@ def _render_modelfile(template: Path, cfg: Config) -> Path:
 
 
 def _pick_model_profile(*, default: str = "fast") -> str:
-    """Interactive picker showing size + RAM-fit per profile."""
+    """Interactive picker showing size + RAM-fit per profile.
+
+    Renders one rounded card per profile (active card border accents in
+    primary, others in rule). Each card shows a marker pill, the Ollama
+    base tag, the download size, and a visual RAM-fit bar — easier to
+    read at a glance than the old `Table` form.
+    """
     ram_gb = detect_ram_gb()
     ui.blank()
     ui.section("choose a model profile")
-    table = ui.make_table("profile", "size", "needs RAM", "notes")
-    rows: list[tuple[str, str]] = []
-    for name, data in MODEL_PROFILES.items():
-        fits = ram_gb is None or ram_gb >= data["min_ram_gb"]
-        marker = "●" if name == default else "○"
-        fit_tag = "" if fits else "  [red](too big for this Mac)[/]"
-        table.add_row(
-            f"{marker} {name}",
-            f"~{data['download_gb']:.1f} GB",
-            f"{data['min_ram_gb']} GB",
-            f"{data['label']}{fit_tag}",
-        )
-        rows.append((name, "fits" if fits else "tight"))
-    ui.print_table(table)
     if ram_gb is not None:
-        ui.hint(f"detected RAM: {ram_gb:.1f} GB")
+        ui.hint(f"detected RAM · {ram_gb:.1f} GB")
+    ui.blank()
+    for name, data in MODEL_PROFILES.items():
+        ui.profile_card(
+            name,
+            base_model=str(data["base_model"]),
+            download_gb=float(data["download_gb"]),
+            min_ram_gb=int(data["min_ram_gb"]),
+            label=str(data["label"]),
+            ram_gb=ram_gb,
+            selected=(name == default),
+        )
     ui.blank()
     while True:
         choice = typer.prompt(
@@ -127,6 +130,84 @@ def _pick_model_profile(*, default: str = "fast") -> str:
         if choice in MODEL_PROFILES:
             return choice
         ui.warn("pick one of: " + ", ".join(MODEL_PROFILES))
+
+
+def _pick_theme(*, default: str = "nebula") -> str:
+    """Interactive theme picker shown during init.
+
+    Stays quiet when the user already accepted a CLI flag — only invoked
+    when neither `--theme` nor `--yes` was passed. Re-uses the
+    `theme_picker_card` UI helper.
+    """
+    ui.blank()
+    ui.section("choose a theme")
+    ui.theme_picker_card(default)
+    ui.blank()
+    while True:
+        choice = typer.prompt(
+            f"theme [{'/'.join(ui.THEMES)}]",
+            default=default,
+        ).strip().lower()
+        if choice in ui.THEMES:
+            return choice
+        ui.warn("pick one of: " + ", ".join(ui.THEMES))
+
+
+def _detect_preflight(cfg: Config) -> list[tuple[str, str, str]]:
+    """Snapshot of what init will and won't have to do, used by the
+    pre-flight card so users see the plan before any prompts fire.
+
+    Each row is `(status, name, detail)`. `✓` rows are already-done,
+    `→` rows will run, `?` rows we can't tell without poking at
+    a subprocess.
+    """
+    rows: list[tuple[str, str, str]] = []
+
+    palace_exists = cfg.palace_dir.exists()
+    rows.append((
+        "✓" if palace_exists else "→",
+        "palace",
+        str(cfg.palace_dir),
+    ))
+
+    ollama_present = shutil.which("ollama") is not None
+    if ollama_present:
+        rows.append(("✓", "ollama", "found on PATH"))
+    else:
+        rows.append(("→", "ollama", "will offer to install"))
+
+    if ollama_present:
+        try:
+            model = Model(cfg)
+            base_ok = model.has_model(cfg.base_model)
+            embed_ok = model.has_model(cfg.embed_model)
+            miniton_ok = model.has_model(cfg.model)
+            model.close()
+            rows.append((
+                "✓" if base_ok else "→",
+                "base model",
+                f"{cfg.base_model}  " + ("(present)" if base_ok else "(will pull)"),
+            ))
+            rows.append((
+                "✓" if embed_ok else "→",
+                "embed model",
+                f"{cfg.embed_model}  " + ("(present)" if embed_ok else "(will pull)"),
+            ))
+            rows.append((
+                "✓" if miniton_ok else "→",
+                "Miniton",
+                f"{cfg.model}  " + ("(built)" if miniton_ok else "(will build)"),
+            ))
+        except Exception:  # noqa: BLE001 — model probe is best-effort
+            rows.append(("?", "model probe", "could not query ollama yet"))
+    else:
+        rows.append(("?", "base model", "needs ollama"))
+        rows.append(("?", "Miniton", "needs ollama"))
+
+    claude_root = Path.home() / ".claude" / "projects"
+    if claude_root.exists() and any(claude_root.rglob("*.jsonl")):
+        rows.append(("→", "Claude Code import", f"sessions found at {claude_root}"))
+    return rows
 
 
 def _offer_ollama_install(*, yes: bool) -> bool:
@@ -149,11 +230,11 @@ def _offer_ollama_install(*, yes: bool) -> bool:
         ui.hint("install Ollama manually: [link]https://ollama.com/download[/link]")
         return False
     ui.blank()
-    ui.panel(
+    ui.card(
+        "install ollama",
         f"Ollama is missing — needed to run Miniton locally.\n\n"
-        f"[{ui.theme().muted}]Will run: {' '.join(cmd)}[/]",
-        title="Install Ollama",
-        anchor=True,
+        f"Will run: [bold]{' '.join(cmd)}[/]",
+        status=("required", "warning"),
     )
     if not yes and not typer.confirm(prompt, default=True):
         return False
@@ -168,12 +249,11 @@ def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
     if yes:
         return True
     ui.blank()
-    ui.panel(
-        f"[bold]{model_name}[/bold]\n\n"
+    ui.card(
+        f"download · {model_name}",
         f"{purpose}\n\n"
-        f"[{ui.theme().muted}]This downloads model weights to your local Ollama store.[/]",
-        title="Model Download",
-        anchor=True,
+        f"[dim]Weights are stored in your local Ollama directory; download once, reuse forever.[/]",
+        status=("model pull", "info"),
     )
     return typer.confirm("Pull this model now?", default=True)
 
@@ -263,7 +343,8 @@ def welcome() -> None:
     mem = Memory(cfg)
     stats = mem.stats()
     mem.close()
-    ui.welcome_tour(cfg, stats)
+    ui.header(cfg, stats)
+    ui.ready_card(cfg, stats)
 
 
 @app.command()
@@ -284,24 +365,50 @@ def init(
     cfg.home.mkdir(parents=True, exist_ok=True)
     cfg.palace_dir.mkdir(parents=True, exist_ok=True)
 
-    ui.section("superton init", "palace + model setup")
+    is_re_init = cfg.palace_dir.exists() and (cfg.palace_dir / "drawers.sqlite").exists()
 
-    # ---------------------------------------------------------------------
-    # Stage 0 — pick a model profile (interactive when not provided and the
-    # user didn't pass --yes, so first-run users see the size/RAM trade-off
-    # rather than silently getting qwen 1.5B).
-    # ---------------------------------------------------------------------
-    if model_profile is None and not yes and not skip_model:
-        try:
-            model_profile = _pick_model_profile(default=cfg.model_profile)
-        except (EOFError, KeyboardInterrupt):
-            model_profile = cfg.model_profile
+    ui.section(
+        "superton init",
+        "re-checking setup" if is_re_init else "palace + model setup",
+    )
+
+    # Pre-flight summary — show the user the full plan before any prompts so
+    # they can ^C out if anything looks wrong, and so the prompts that follow
+    # feel like steps in a known sequence rather than surprise dialogs.
+    summary = (
+        "Already set up — re-verifying each stage."
+        if is_re_init
+        else "First-run setup. Each step asks before downloading anything."
+    )
+    ui.blank()
+    ui.preflight_card("about to do", _detect_preflight(cfg), summary=summary)
+    ui.blank()
+
+    # Validate user-provided flags first so a typo fails fast, before we
+    # walk through interactive prompts.
     if model_profile and model_profile not in MODEL_PROFILES:
         ui.err("unknown model profile", "choose one of: " + ", ".join(MODEL_PROFILES))
         raise typer.Exit(1)
     if theme and theme not in ui.THEMES:
         ui.err("unknown theme", "choose one of: " + ", ".join(ui.THEMES))
         raise typer.Exit(1)
+
+    # ---------------------------------------------------------------------
+    # Stage 0 — pick model profile + theme (interactive when not provided and
+    # the user didn't pass --yes, so first-run users see the choices)
+    # ---------------------------------------------------------------------
+    if model_profile is None and not yes and not skip_model:
+        try:
+            model_profile = _pick_model_profile(default=cfg.model_profile)
+        except (EOFError, KeyboardInterrupt):
+            model_profile = cfg.model_profile
+
+    if theme is None and not yes:
+        try:
+            theme = _pick_theme(default=cfg.theme)
+        except (EOFError, KeyboardInterrupt):
+            theme = cfg.theme
+
     settings_update: dict[str, str] = {}
     if model_profile and model_profile != cfg.model_profile:
         selected = MODEL_PROFILES[model_profile]
@@ -318,69 +425,100 @@ def init(
         if "theme" in settings_update:
             ui.set_theme(cfg.theme)
 
+    # Determine how many stages will actually run so the [N/total] indicator
+    # in each stage header is meaningful. Stages always present: palace,
+    # ollama, base, embed, build. Optional: Claude Code import.
+    has_claude_sessions = (Path.home() / ".claude" / "projects").exists() and any(
+        (Path.home() / ".claude" / "projects").rglob("*.jsonl")
+    )
+    total_stages = 1 if skip_model else (6 if has_claude_sessions else 5)
+    step = 0
+
     # ---------------------------------------------------------------------
     # Stage 1 — palace store
     # ---------------------------------------------------------------------
-    with ui.stage("creating palace"):
+    step += 1
+    with ui.stage("creating palace", step=step, total=total_stages):
         Memory(cfg).close()
         ui.stage_ok(f"palace at {cfg.palace_dir}")
 
     if skip_model:
+        ui.blank()
         ui.stage_skip("skipped ollama model build (--no-model)")
         ui.blank()
-        ui.next_steps_card(cfg)
+        _finish_init(cfg)
         return
 
     # ---------------------------------------------------------------------
     # Stage 2 — ollama availability
     # ---------------------------------------------------------------------
-    with ui.stage("checking ollama"):
+    step += 1
+    with ui.stage("checking ollama", step=step, total=total_stages):
         if shutil.which("ollama") is None:
-            ui.stage_warn("ollama not found in PATH")
+            ui.stage_warn(
+                "ollama not found in PATH",
+                hint="install: https://ollama.com/download",
+            )
             installed = _offer_ollama_install(yes=yes)
             if not installed:
                 if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"):
                     ui.stage_ok("Hugging Face fallback configured via HF_TOKEN")
                 else:
-                    ui.hint(
-                        "fallback: set [bold]HF_TOKEN[/bold] and "
-                        "[bold]SUPERTON_MODEL_BACKEND=huggingface[/bold]"
+                    ui.stage_warn(
+                        "no model backend available",
+                        hint="set HF_TOKEN and SUPERTON_MODEL_BACKEND=huggingface, "
+                        "or rerun after installing ollama",
                     )
                 ui.blank()
-                ui.next_steps_card(cfg)
+                _finish_init(cfg)
                 return
             ui.stage_ok("ollama installed")
 
         model = Model(cfg)
         if not model.ollama_ready() and not model.start_ollama():
-            ui.stage_warn("could not start ollama automatically")
-            ui.hint("run manually: [bold]ollama serve[/bold]")
+            ui.stage_warn(
+                "could not start ollama automatically",
+                hint="run manually: ollama serve",
+            )
             model.close()
             ui.blank()
-            ui.next_steps_card(cfg)
+            _finish_init(cfg)
             return
         ui.stage_ok(f"ollama running at {cfg.ollama_url}")
 
     # ---------------------------------------------------------------------
     # Stage 3 — base model
     # ---------------------------------------------------------------------
-    with ui.stage(f"pulling base model · {cfg.base_model}"):
+    step += 1
+    profile_data = MODEL_PROFILES[cfg.model_profile]
+    with ui.stage(
+        f"pulling base model · {cfg.base_model}",
+        step=step,
+        total=total_stages,
+    ):
         if model.has_model(cfg.base_model):
             ui.stage_ok("already present")
         else:
             if not _confirm_pull(
                 cfg.base_model,
-                "Required to build Miniton, the local answer model.",
+                f"Required to build Miniton, the local answer model. "
+                f"~{profile_data['download_gb']:.1f} GB.",
                 yes=yes,
             ):
-                ui.stage_warn("skipped model pull")
+                ui.stage_warn(
+                    "skipped model pull",
+                    hint=f"rerun: superton init --yes  (or: ollama pull {cfg.base_model})",
+                )
                 model.close()
                 ui.blank()
-                ui.next_steps_card(cfg)
+                _finish_init(cfg)
                 return
             subprocess.run(["ollama", "pull", cfg.base_model], check=False)
             if not model.has_model(cfg.base_model):
-                ui.stage_warn(f"failed to pull {cfg.base_model}")
+                ui.stage_warn(
+                    f"failed to pull {cfg.base_model}",
+                    hint="check network and disk space, then rerun: superton init",
+                )
                 model.close()
                 return
             ui.stage_ok("downloaded")
@@ -388,19 +526,27 @@ def init(
     # ---------------------------------------------------------------------
     # Stage 4 — embedding model
     # ---------------------------------------------------------------------
-    with ui.stage(f"pulling embedding model · {cfg.embed_model}"):
+    step += 1
+    with ui.stage(
+        f"pulling embedding model · {cfg.embed_model}",
+        step=step,
+        total=total_stages,
+    ):
         if model.has_model(cfg.embed_model):
             ui.stage_ok("already present")
         else:
             if not _confirm_pull(
                 cfg.embed_model,
-                "Required for local embeddings and better semantic memory.",
+                "Required for local embeddings and better semantic memory. ~270 MB.",
                 yes=yes,
             ):
-                ui.stage_warn("skipped embedding model pull")
+                ui.stage_warn(
+                    "skipped embedding model pull",
+                    hint=f"rerun later: ollama pull {cfg.embed_model}",
+                )
                 model.close()
                 ui.blank()
-                ui.next_steps_card(cfg)
+                _finish_init(cfg)
                 return
             subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
             ui.stage_ok("downloaded")
@@ -408,30 +554,42 @@ def init(
     # ---------------------------------------------------------------------
     # Stage 5 — build Miniton
     # ---------------------------------------------------------------------
-    with ui.stage("building Miniton"):
+    step += 1
+    with ui.stage("building Miniton", step=step, total=total_stages):
         modelfile = _project_modelfile()
         if modelfile is None:
-            ui.stage_warn("Modelfile not found — using base model directly")
+            ui.stage_warn(
+                "Modelfile not found — using base model directly",
+                hint="reinstall superton to restore the bundled Modelfile",
+            )
         else:
             rendered = _render_modelfile(modelfile, cfg)
             if model.build(rendered):
                 ui.stage_ok(f"built as {cfg.model}")
             else:
-                ui.stage_warn("model build failed — base model still usable")
+                ui.stage_warn(
+                    "model build failed — base model still usable",
+                    hint=f"try `superton tune` or `ollama create {cfg.model} -f Modelfile`",
+                )
     model.close()
 
     # ---------------------------------------------------------------------
     # Stage 6 — offer to import Claude Code sessions
     # ---------------------------------------------------------------------
-    claude_root = Path.home() / ".claude" / "projects"
-    if claude_root.exists() and any(claude_root.rglob("*.jsonl")):
+    if has_claude_sessions:
+        claude_root = Path.home() / ".claude" / "projects"
         ui.blank()
         should_import = yes or typer.confirm(
             f"Found Claude Code sessions at {claude_root} — import them now?",
             default=False,
         )
         if should_import:
-            with ui.stage("importing Claude Code sessions"):
+            step += 1
+            with ui.stage(
+                "importing Claude Code sessions",
+                step=step,
+                total=total_stages,
+            ):
                 from superton.importers.claude_code import ClaudeCodeImporter
 
                 mem = Memory(cfg)
@@ -440,10 +598,18 @@ def init(
                 ui.stage_ok(f"{drawers} drawers from {sessions} sessions")
 
     # ---------------------------------------------------------------------
-    # Final — next steps card
+    # Final — hero ready card
     # ---------------------------------------------------------------------
+    _finish_init(cfg)
+
+
+def _finish_init(cfg: Config) -> None:
+    """Print the ready card with live palace stats."""
+    mem = Memory(cfg)
+    stats = mem.stats()
+    mem.close()
     ui.blank()
-    ui.next_steps_card(cfg)
+    ui.ready_card(cfg, stats)
 
 
 @app.command()

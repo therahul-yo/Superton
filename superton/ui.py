@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -827,15 +827,22 @@ def typing_cursor(char: str = "▎") -> str:
 # --- staged flow, markdown, score coloring, next-steps card -------------------
 
 @contextmanager
-def stage(title: str):
+def stage(title: str, *, step: int | None = None, total: int | None = None):
     """A numbered step shown during multi-stage work like `superton init`.
 
-    Usage:
-        with ui.stage("creating palace"):
-            ...
-            ui.stage_detail("palace at {path}")
+    When `step` and `total` are passed, the header prints as
+    `→ [3/6] checking ollama`, giving the user a visible sense of how
+    much remains. Without them, falls back to the original `→ title`
+    layout for back-compat with callers that don't track step counts.
     """
-    _console.print(f"[{_current.primary}]→[/] {title}")
+    if step is not None and total is not None:
+        header = (
+            f"[{_current.primary}]→[/] "
+            f"[{_current.muted}][{step}/{total}][/] {title}"
+        )
+    else:
+        header = f"[{_current.primary}]→[/] {title}"
+    _console.print(header)
     try:
         yield
     except Exception:
@@ -848,12 +855,220 @@ def stage_ok(msg: str) -> None:
     _console.print(f"  [{_current.success}]✓[/] {msg}")
 
 
-def stage_warn(msg: str) -> None:
+def stage_warn(msg: str, hint: str | None = None) -> None:
+    """Indented warning. `hint` is rendered on a follow-up line in the
+    same dim style as `ui.hint()` so the user always sees a recovery
+    suggestion right next to the problem.
+    """
     _console.print(f"  [{_current.warning}]![/] {msg}")
+    if hint:
+        _console.print(f"    [{_current.muted}]↳ {hint}[/]")
 
 
 def stage_skip(msg: str) -> None:
     _console.print(f"  [{_current.muted}]- {msg}[/]")
+
+
+# --- install-flow primitives --------------------------------------------------
+
+
+def ram_bar(used_gb: float | None, recommended_gb: float, *, width: int = 6) -> Text:
+    """Visual RAM fit chip: ■■■■□□ 8 / 16 GB · fits.
+
+    `used_gb` is the host's detected RAM; `recommended_gb` is the profile's
+    minimum recommendation. The bar colours green if the host fits, red if
+    it doesn't, muted if the host RAM is unknown.
+    """
+    out = Text()
+    if used_gb is None:
+        out.append("□" * width, style=_current.muted)
+        out.append(f"  ?? / {recommended_gb:.0f} GB", style=_current.muted)
+        return out
+
+    ratio = min(1.0, used_gb / max(recommended_gb * 2, 1.0))
+    filled = max(1, int(ratio * width))
+    empty = width - filled
+    fit = used_gb >= recommended_gb
+    bar_color = _current.success if fit else _current.warning
+    out.append("■" * filled, style=bar_color)
+    out.append("□" * empty, style=_current.muted)
+    out.append(
+        f"  {used_gb:.0f} / {recommended_gb:.0f} GB  ",
+        style=_current.neutral,
+    )
+    out.append_text(pill("fits" if fit else "tight", kind="success" if fit else "warning"))
+    return out
+
+
+def preflight_card(
+    title: str,
+    rows: list[tuple[str, str, str]],
+    *,
+    summary: str | None = None,
+) -> None:
+    """Show what an upcoming multi-stage flow will do, with per-row status.
+
+    Each row is `(status, name, detail)`:
+      status: "✓" (already done), "→" (will run), "?" (unknown), "-" (skip)
+    Rendered as a rounded card so init feels like a deliberate plan rather
+    than a wall of prompts.
+    """
+    icon_styles = {
+        "✓": _current.success,
+        "→": _current.primary,
+        "?": _current.muted,
+        "-": _current.muted,
+    }
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(width=2)
+    table.add_column(min_width=22)
+    table.add_column()
+    for status, name, detail in rows:
+        marker = Text(status, style=icon_styles.get(status, _current.muted))
+        table.add_row(marker, Text(name, style="bold"), Text(detail, style=_current.muted))
+    body: Any = (
+        Group(Text(summary, style=_current.muted), Text(""), table) if summary else table
+    )
+    _console.print(
+        Panel(
+            body,
+            title=Text(f"▸ {title}", style=f"bold {_current.primary}"),
+            title_align="left",
+            border_style=_current.rule,
+            padding=(0, 1),
+            expand=False,
+            box=box.ROUNDED,
+        )
+    )
+
+
+def ready_card(cfg, stats: dict) -> None:
+    """Hero 'you're ready' card shown at the end of init.
+
+    Replaces the older next_steps_card with a more deliberate finale:
+    SuperTon wordmark, a row of status pills, then two compact
+    command-and-hint columns. Designed to feel like a landing moment,
+    not a help screen.
+    """
+    body = Text()
+    body.append("SuperTon is ready.\n", style=f"bold {_current.primary}")
+    body.append("\n")
+    body.append_text(status_pills(cfg, stats))
+    body.append("\n\n")
+    body.append("Start here:\n", style=_current.muted)
+    body.append("  superton add ~/notes              ", style="bold")
+    body.append("# ingest a directory\n", style=_current.muted)
+    body.append("  superton import claude-code        ", style="bold")
+    body.append("# pull past Claude Code sessions\n", style=_current.muted)
+    body.append('  superton ask "..."                 ', style="bold")
+    body.append("# grounded answer with citations\n", style=_current.muted)
+    body.append("  superton                           ", style="bold")
+    body.append("# interactive shell · type / for commands\n", style=_current.muted)
+    body.append("\n")
+    body.append("Power tools:\n", style=_current.muted)
+    body.append("  superton tui                       ", style="bold")
+    body.append("# full-screen Textual TUI\n", style=_current.muted)
+    body.append("  superton mcp serve                 ", style="bold")
+    body.append("# expose palace to Claude / Cursor / Gemini\n", style=_current.muted)
+    body.append("  superton doctor                    ", style="bold")
+    body.append("# verify install + show recovery hints\n", style=_current.muted)
+    body.append("\n")
+    body.append("palace at  ", style=_current.muted)
+    body.append(f"{cfg.palace_dir}", style=_current.muted)
+
+    _console.print(
+        Panel(
+            body,
+            title=Text("ready", style=f"bold {_current.primary}"),
+            title_align="left",
+            border_style=_current.primary,
+            padding=(1, 2),
+            expand=False,
+            box=box.ROUNDED,
+        )
+    )
+
+
+def profile_card(
+    name: str,
+    *,
+    base_model: str,
+    download_gb: float,
+    min_ram_gb: int,
+    label: str,
+    ram_gb: float | None,
+    selected: bool,
+) -> None:
+    """One model-profile card used by the init picker.
+
+    Stacks a header pill (active marker + profile name + base model),
+    a RAM-fit bar, and the human description. Cards are visually
+    distinguishable at a glance — easier than reading a table.
+    """
+    marker_pill = pill(
+        f"● {name}" if selected else f"○ {name}",
+        kind="primary" if selected else "neutral",
+    )
+    header = Text()
+    header.append_text(marker_pill)
+    header.append("  ")
+    header.append(base_model, style=_current.muted)
+    header.append("    ")
+    header.append(f"~{download_gb:.1f} GB download", style=_current.muted)
+
+    bar = ram_bar(ram_gb, float(min_ram_gb))
+
+    note = Text(label, style=_current.muted)
+
+    body = Group(header, bar, note)
+    _console.print(
+        Panel(
+            body,
+            border_style=_current.primary if selected else _current.rule,
+            padding=(0, 1),
+            expand=False,
+            box=box.ROUNDED,
+        )
+    )
+
+
+def theme_picker_card(active: str) -> None:
+    """Show all available themes side-by-side with color swatches.
+
+    Used during `superton init` so first-run users see the palette options
+    rather than learning about them later via `superton theme`.
+    """
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(width=4)
+    table.add_column(min_width=8)
+    table.add_column()
+    table.add_column()
+    for theme_obj in list_themes():
+        marker = "●" if theme_obj.name == active else "○"
+        swatch = (
+            f"[{theme_obj.primary}]██[/] "
+            f"[{theme_obj.secondary}]██[/] "
+            f"[{theme_obj.success}]✓[/] "
+            f"[{theme_obj.warning}]![/] "
+            f"[{theme_obj.error}]✗[/]"
+        )
+        table.add_row(
+            marker,
+            Text(theme_obj.name, style="bold"),
+            swatch,
+            Text(theme_obj.label, style=_current.muted),
+        )
+    _console.print(
+        Panel(
+            table,
+            title=Text("▸ themes", style=f"bold {_current.primary}"),
+            title_align="left",
+            border_style=_current.rule,
+            padding=(0, 1),
+            expand=False,
+            box=box.ROUNDED,
+        )
+    )
 
 
 def markdown(text: str) -> None:
