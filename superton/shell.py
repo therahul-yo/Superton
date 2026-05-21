@@ -53,6 +53,7 @@ COMMAND_HELP = {
     "/search": "search memory",
     "/sources": "list indexed sources",
     "/stats": "show palace stats",
+    "/stop": "stop Miniton without quitting",
     "/theme": "show/switch CLI theme",
 }
 ANSWER_CONTEXT_DRAWERS = 10
@@ -518,6 +519,19 @@ def _switch_theme(name: str) -> Config:
     return Config.load()
 
 
+def _stop_active_model(model: Model, cfg: Config, *, quiet: bool = False) -> bool:
+    """Stop the currently configured SuperTon runner in Ollama."""
+    stopped = model.stop(cfg.model)
+    if not quiet:
+        ui.blank()
+        if stopped:
+            ui.ok(f"stopped {cfg.model}")
+        else:
+            ui.step(f"not running: {cfg.model}")
+        ui.blank()
+    return stopped
+
+
 def _answer(
     mem: Memory,
     model: Model,
@@ -573,6 +587,7 @@ def run() -> None:
             if not text:
                 continue
             if text in {"/quit", "/exit", "quit", "exit"}:
+                _stop_active_model(model, cfg, quiet=True)
                 break
             if text in {"/help", "?"}:
                 ui.console().print(
@@ -580,8 +595,11 @@ def run() -> None:
                     "/refresh <path>\n"
                     "search: /search <query> · /sources · /forget-source <name>\n"
                     "config: /model [photon|proton|neutron] · /theme · /reindex\n"
-                    "system: /doctor · /stats · /clear · /quit"
+                    "system: /doctor · /stats · /clear · /stop · /quit"
                 )
+                continue
+            if text == "/stop":
+                _stop_active_model(model, cfg)
                 continue
             if text == "/import" or text.startswith("/import "):
                 source = text.removeprefix("/import").strip()

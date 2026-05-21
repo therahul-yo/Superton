@@ -18,6 +18,7 @@ PALETTE_ACTIONS: list[tuple[str, str]] = [
     ("list sources",          "/sources"),
     ("rebuild semantic index", "/reindex"),
     ("clear conversation",    "/clear"),
+    ("stop model",            "/stop"),
     ("import claude-code",    "/import claude-code"),
     ("import chatgpt …",      "/import chatgpt "),
     ("import cursor",         "/import cursor"),

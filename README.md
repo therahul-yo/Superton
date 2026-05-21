@@ -207,7 +207,7 @@ superton mcp serve               # expose the palace to Claude / Cursor / Gemini
 superton dedup --dry-run         # find near-duplicate drawers
 superton close                   # stop local model runners
 
-# or launch the interactive shell — type / to see all slash commands
+# or launch the interactive shell — type /stop to unload Miniton, /quit to stop + exit
 superton
 ```
 
@@ -282,6 +282,7 @@ Features:
 | `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
 | `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
 | `superton close` | Stop running SuperTon model runners |
+| `/stop` or `/quit` in the shell/TUI | Stop Miniton; `/quit` also exits |
 | `superton uninstall --yes --tool` | Remove local SuperTon data, Ollama models, and CLI install |
 | `superton import claude-code` | Import Claude Code session history |
 | `superton import chatgpt <export>` | Import ChatGPT `conversations.json` exports |

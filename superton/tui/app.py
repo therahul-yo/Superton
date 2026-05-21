@@ -100,6 +100,7 @@ class SupertonApp(App[None]):
     def on_message_submitted(self, event: MessageSubmitted) -> None:
         text = event.text
         if text in {"/quit", "/exit", "quit", "exit"}:
+            self._stop_model(quiet=True)
             self.exit()
             return
         if text.startswith("/"):
@@ -190,6 +191,7 @@ class SupertonApp(App[None]):
         """
         cmd = command.strip()
         if cmd in {"/quit", "/exit"}:
+            self._stop_model(quiet=True)
             self.exit()
             return
         if cmd in {"/help", "?"}:
@@ -197,6 +199,9 @@ class SupertonApp(App[None]):
             return
         if cmd == "/clear":
             self.action_clear_chat()
+            return
+        if cmd == "/stop":
+            self._stop_model()
             return
         if cmd == "/stats":
             if self.mem is not None:
@@ -317,6 +322,19 @@ class SupertonApp(App[None]):
             footer.toast(msg, kind=kind)
         except Exception:  # noqa: BLE001
             log.info("toast: %s", msg)
+
+    def _stop_model(self, *, quiet: bool = False) -> bool:
+        if self.model is None:
+            if not quiet:
+                self._toast("model not running")
+            return False
+        stopped = self.model.stop(self.cfg.model)
+        if not quiet:
+            self._toast(
+                f"stopped {self.cfg.model}" if stopped else f"not running: {self.cfg.model}",
+                kind="success" if stopped else "info",
+            )
+        return stopped
 
     # -- shutdown ------------------------------------------------------------
 
