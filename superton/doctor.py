@@ -7,12 +7,22 @@ show the same information.
 
 from __future__ import annotations
 
+import os
 import shutil
 
 from superton import ui
 from superton.config import Config
 from superton.memory import Memory
 from superton.model import Model
+
+
+def _mask_token(token: str) -> str:
+    """Show only the first 4 and last 4 characters of a secret-like string."""
+    if not token:
+        return ""
+    if len(token) <= 8:
+        return "•" * len(token)
+    return f"{token[:4]}…{token[-4:]}"
 
 
 def render_doctor_report(cfg: Config) -> None:
@@ -69,11 +79,12 @@ def render_doctor_report(cfg: Config) -> None:
         row("Miniton model", model.has_model(cfg.model), cfg.model)
         row("base model", model.has_model(cfg.base_model), cfg.base_model)
         row("embed model", model.has_model(cfg.embed_model), cfg.embed_model)
-    row(
-        "hugging face",
-        model.hf_ready(),
-        cfg.hf_model if model.hf_ready() else "HF_TOKEN missing",
-    )
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN") or ""
+    if model.hf_ready():
+        hf_detail = f"{cfg.hf_model}  (token: {_mask_token(hf_token)})"
+    else:
+        hf_detail = "HF_TOKEN missing"
+    row("hugging face", model.hf_ready(), hf_detail)
     model.close()
 
     if s.get("semantic_error"):

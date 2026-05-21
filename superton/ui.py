@@ -18,7 +18,9 @@ Themes are chosen by, in order:
 from __future__ import annotations
 
 import os
+import threading
 import time
+from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -144,7 +146,8 @@ def _resolve_theme_name() -> str:
         cfg = Config.load()
         if cfg.theme in THEMES:
             return cfg.theme
-    except Exception:
+    except (ImportError, OSError, ValueError):
+        # Config file unreadable or platformdirs misbehaving — fall through to default.
         pass
     return DEFAULT_THEME
 
@@ -224,16 +227,34 @@ def rule(title: str | None = None) -> None:
     _console.rule(title or "", style=_current.rule)
 
 
-def section(title: str, subtitle: str | None = None) -> None:
+def section(title: str, subtitle: str | None = None, *, sweep: bool = True) -> None:
+    """Print a themed section header.
+
+    With `sweep=True` on a TTY, the prefix glyph briefly fades muted →
+    secondary → primary (~120ms) so each new section registers visually.
+    Falls back to a single static print in non-terminal contexts.
+    """
     _console.print()
-    line = Text()
-    # Small themed anchor (prompt glyph) gives each section header a visual tie
-    # to the active theme without being noisy.
-    line.append(f"{_current.prompt_glyph} ", style=_current.primary)
-    line.append(title, style="bold")
-    if subtitle:
-        line.append(f"  {subtitle}", style=_current.muted)
-    _console.print(line)
+
+    def _line(glyph_style: str) -> Text:
+        out = Text()
+        out.append(f"{_current.prompt_glyph} ", style=glyph_style)
+        out.append(title, style="bold")
+        if subtitle:
+            out.append(f"  {subtitle}", style=_current.muted)
+        return out
+
+    if not sweep or not _console.is_terminal:
+        _console.print(_line(_current.primary))
+        return
+
+    sweep_styles = [_current.muted, _current.secondary, _current.primary]
+    with Live(_line(sweep_styles[0]), console=_console, refresh_per_second=30, transient=True) as live:
+        for style in sweep_styles:
+            live.update(_line(style))
+            time.sleep(0.04)
+    # Live was transient; print the final line so it persists in scrollback.
+    _console.print(_line(_current.primary))
 
 
 # --- structured output --------------------------------------------------------
@@ -291,13 +312,199 @@ def panel(content: Any, *, title: str | None = None, width: int | None = None, a
 
 
 @contextmanager
-def spinner(label: str):
-    """Show a Rich spinner while a block of work runs."""
+def spinner(
+    label: str,
+    *,
+    phases: Iterable[str] | None = None,
+    phase_interval: float = 0.85,
+):
+    """Show a Rich spinner while a block of work runs.
+
+    Yields a `set_status(label)` callable so long-running work can update
+    the spinner text live (e.g. `pulling … 42/100 pages`). The setter is
+    a no-op in non-terminal contexts.
+
+    `phases`, when supplied, is cycled in a background daemon thread —
+    the spinner text rotates through the verbs every `phase_interval`
+    seconds. Calling `set_status` mid-stream takes over and overrides
+    the cycle until the next phase tick.
+    """
     if not _console.is_terminal:
-        yield
+        def _noop(_label: str) -> None:
+            return None
+
+        yield _noop
         return
-    with _console.status(f"[{_current.muted}]{label}[/]", spinner="dots"):
-        yield
+
+    phase_list = list(phases) if phases else None
+    with _console.status(f"[{_current.muted}]{label}[/]", spinner="dots") as status:
+        stop = threading.Event()
+        cycler: threading.Thread | None = None
+        if phase_list:
+            def _cycle() -> None:
+                idx = 0
+                while not stop.wait(phase_interval):
+                    status.update(f"[{_current.muted}]{phase_list[idx % len(phase_list)]}…[/]")
+                    idx += 1
+
+            cycler = threading.Thread(target=_cycle, daemon=True)
+            cycler.start()
+
+        def _set(new_label: str) -> None:
+            status.update(f"[{_current.muted}]{new_label}[/]")
+
+        try:
+            yield _set
+        finally:
+            stop.set()
+            if cycler is not None:
+                cycler.join(timeout=0.1)
+
+
+# --- card / pill primitives ---------------------------------------------------
+
+
+def pill(label: str, *, kind: str = "neutral") -> Text:
+    """Compact background-tinted badge for status displays.
+
+    `kind` is one of: primary, secondary, success, warning, error, neutral.
+    Falls back to neutral if unknown. The background colors lean on the
+    active theme's `rule` value so pills sit naturally next to it.
+    """
+    palette = {
+        "primary": (_current.primary, _current.neutral),
+        "secondary": (_current.secondary, _current.neutral),
+        "success": (_current.success, "grey15"),
+        "warning": (_current.warning, "grey15"),
+        "error": (_current.error, _current.neutral),
+        "info": (_current.info, "grey15"),
+        "neutral": (_current.muted, _current.neutral),
+    }
+    fg, bg_hint = palette.get(kind, palette["neutral"])
+    text = Text()
+    text.append(f" {label} ", style=f"bold {bg_hint} on {fg}")
+    return text
+
+
+def status_pills(cfg: Any, stats: dict[str, Any]) -> Text:
+    """GitHub-style row of pills summarizing the current session.
+
+    Reads as a single visual stripe: theme · model · palace size. Designed
+    to replace the dim text line under the welcome card.
+    """
+    row = Text()
+    row.append_text(pill(_current.name, kind="primary"))
+    row.append("  ")
+    row.append_text(pill(f"miniton:{cfg.model_profile}", kind="secondary"))
+    row.append("  ")
+    row.append_text(pill(f"palace · {stats.get('drawers', 0)}", kind="neutral"))
+    if stats.get("semantic_error"):
+        row.append("  ")
+        row.append_text(pill("semantic offline", kind="warning"))
+    return row
+
+
+def card(
+    title: str,
+    body: Any,
+    *,
+    status: tuple[str, str] | None = None,
+) -> None:
+    """Rounded tool-result card with optional status pill in the title.
+
+    Usage:
+        ui.card("search", body_text, status=("ok", "success"))
+
+    `body` is any Rich-renderable (Text, Markdown, Group, Table, str).
+    """
+    title_text = Text()
+    title_text.append(f"▸ {title}", style=f"bold {_current.primary}")
+    if status is not None:
+        label, kind = status
+        title_text.append("  ")
+        title_text.append_text(pill(label, kind=kind))
+
+    if isinstance(body, str):
+        body_renderable: Any = Text(body)
+    else:
+        body_renderable = body
+
+    _console.print(
+        Panel(
+            body_renderable,
+            title=title_text,
+            title_align="left",
+            border_style=_current.rule,
+            padding=(0, 1),
+            expand=False,
+            box=box.ROUNDED,
+        )
+    )
+
+
+# --- diff / shimmer / pager ---------------------------------------------------
+
+
+def diff_summary(removed: int, added: int, *, label: str = "drawers") -> None:
+    """Render `refresh`-style output as a two-line diff for at-a-glance reads."""
+    minus = Text()
+    minus.append(f"  - {removed:>4} {label}", style=f"dim {_current.error}")
+    plus = Text()
+    plus.append(f"  + {added:>4} {label}", style=f"dim {_current.success}")
+    _console.print(minus)
+    _console.print(plus)
+
+
+def shimmer(label: str, *, cycles: int = 3, interval: float = 0.12) -> None:
+    """Brief 'scanning…' pulse used before printing an empty-state message.
+
+    Cycles the label through muted → secondary → muted to imply "we did
+    actually look". No-op in non-terminal contexts.
+    """
+    if not _console.is_terminal:
+        return
+    styles = [_current.muted, _current.secondary, _current.primary, _current.secondary]
+    with Live(Text(label, style=styles[0]), console=_console, refresh_per_second=30, transient=True) as live:
+        for _ in range(cycles):
+            for style in styles:
+                live.update(Text(label, style=style))
+                time.sleep(interval)
+
+
+def maybe_pager(text: str, *, threshold_lines: int | None = None) -> None:
+    """Print `text` directly, or pipe through a pager when it would overflow.
+
+    The pager activates only on a TTY and only when the rendered text exceeds
+    `threshold_lines` (default: terminal height minus 4). Markdown is rendered
+    inside the pager too so `q` exits cleanly.
+    """
+    if not _console.is_terminal or not text:
+        if text:
+            markdown(text)
+        return
+    threshold = threshold_lines if threshold_lines is not None else max(20, (_console.size.height or 24) - 4)
+    line_count = text.count("\n") + 1
+    if line_count <= threshold:
+        markdown(text)
+        return
+    with _console.pager(styles=True):
+        markdown(text)
+
+
+def numbered_chip(n: int, drawer_id: str | None, source: str | None) -> Text:
+    """Pill-style numbered citation chip.
+
+    Used by `citations()` to render `[ 1 ] abcd1234 file.md` with the
+    number inside a real background tint instead of plain brackets.
+    """
+    label = f" {n} "
+    text = Text()
+    text.append(label, style=f"bold {_current.neutral} on {_current.muted}")
+    text.append(" ")
+    text.append((drawer_id or "-")[:8], style=_current.secondary)
+    text.append(" ")
+    text.append(Path(source).name if source else "", style=_current.muted)
+    return text
 
 
 # --- domain helpers -----------------------------------------------------------
@@ -485,6 +692,12 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
 
     _console.print()
     panel(body)
+    if _console.is_terminal:
+        # Status pills sit under the header — gives a GitHub-style readout
+        # of the active session at a glance.
+        row = Text("  ")
+        row.append_text(status_pills(cfg, stats))
+        _console.print(row)
     _console.print()
 
 
@@ -567,37 +780,43 @@ def boot_splash(duration: float = 0.6) -> None:
 
 
 def citations(hits) -> None:
-    """Compact single-line `sources` footer.
+    """Compact single-line `sources` footer with pill-style numbered chips.
 
-    Renders all cited drawers on one row as numbered badges so the footer
-    stays above the fold even when the answer is long. Multi-line fallback
-    only kicks in if the row would not fit a typical 100-column terminal.
+    Numbered chips have a real background tint so they read as discrete
+    badges instead of plain text. Multi-line fallback only kicks in if the
+    chip row would not fit the current terminal width.
     """
     if not hits:
         return
     _console.print()
-    badges: list[str] = []
-    for i, h in enumerate(hits, 1):
-        src = Path(h.drawer.source).name
-        badges.append(
-            f"[{_current.muted}][{i}][/] "
-            f"{style_id(h.drawer.id[:8])} "
-            f"{style_path(src)}"
-        )
-    # Rough width budget — fall back to one-per-line if the joined badge
-    # row would wrap. Console.width is None in some test contexts.
+
+    chips: list[Text] = [
+        numbered_chip(i, h.drawer.id, h.drawer.source) for i, h in enumerate(hits, 1)
+    ]
+
     width = _console.width or 100
+    # Plain-text length estimate (chips render as " N  abcd1234 file.md").
     joined_plain = "  ".join(
-        f"[{i}] {h.drawer.id[:8]} {Path(h.drawer.source).name}"
+        f" {i}  {h.drawer.id[:8]} {Path(h.drawer.source).name}"
         for i, h in enumerate(hits, 1)
     )
-    label = f"[{_current.muted}]sources[/]"
+    label = Text("sources", style=_current.muted)
+
     if len(joined_plain) + len("sources  ") <= width:
-        _console.print(f"{label}  " + "  ".join(badges))
+        row = Text()
+        row.append_text(label)
+        row.append("  ")
+        for idx, chip in enumerate(chips):
+            row.append_text(chip)
+            if idx != len(chips) - 1:
+                row.append("  ")
+        _console.print(row)
     else:
         _console.print(label)
-        for badge in badges:
-            _console.print(f"  {badge}")
+        for chip in chips:
+            row = Text("  ")
+            row.append_text(chip)
+            _console.print(row)
 
 
 def typing_cursor(char: str = "▎") -> str:
@@ -707,7 +926,8 @@ def stream_answer(token_iter, label: str = "Miniton") -> str:
     """Stream tokens live under a header. Returns the full answer string.
 
     Uses rich.Live so tokens appear as they arrive. After the stream ends,
-    the final answer is re-rendered as markdown for a tidy output.
+    the cursor fades muted → rule → erased over ~150 ms so the answer
+    doesn't end on a hard cut. The final text is re-rendered as markdown.
 
     Exceptions from the token iterator propagate to the caller so that
     model errors (e.g. ModelError) can be handled upstream.
@@ -730,10 +950,23 @@ def stream_answer(token_iter, label: str = "Miniton") -> str:
                 # of the screen, not a glowing tail. Matches Claude Code.
                 t.append("▎", style=_current.muted)
                 live.update(t)
+            # Cursor retire: fade through dimmer styles, then drop entirely
+            # so the answer lands cleanly instead of clipping mid-glyph.
+            running = "".join(buf)
+            for style in (_current.muted, _current.rule):
+                faded = Text(running)
+                faded.append("▎", style=style)
+                live.update(faded)
+                time.sleep(0.06)
+            live.update(Text(running))
+            time.sleep(0.03)
     else:
         for tok in token_iter:
             buf.append(tok)
     answer = "".join(buf).strip()
     if answer:
-        markdown(answer)
+        # Long answers (longer than the terminal can show without scrolling)
+        # are routed through Rich's pager so the user sees the head first
+        # and can browse with `q` to exit.
+        maybe_pager(answer)
     return answer

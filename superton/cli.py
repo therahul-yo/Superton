@@ -23,12 +23,15 @@ from pathlib import Path
 
 import typer
 
-from superton import __version__, ui
+from superton import __version__, errors, ui
 from superton.blackhole import static_frame
 from superton.config import MODEL_PROFILES, Config, detect_ram_gb, write_settings
 from superton.ingest import chunk_text, read_file, walk
+from superton.logging import get_logger
 from superton.memory import Memory
 from superton.model import Model, ModelError, OllamaError
+
+log = get_logger("cli")
 
 app = typer.Typer(
     name="superton",
@@ -175,12 +178,16 @@ def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
     return typer.confirm("Pull this model now?", default=True)
 
 
-def _ingest_into_memory(mem: Memory, path: Path, *, wing: str, room: str) -> tuple[int, int, int]:
+def _ingest_into_memory(
+    mem: Memory, path: Path, *, wing: str, room: str
+) -> tuple[int, int, int, int]:
+    """Walk `path`, ingest each file. Returns (files, drawers, skipped, deduped)."""
     files = list(walk(path))
     total_drawers = 0
     skipped = 0
+    deduped = 0
     if not files:
-        return 0, 0, 0
+        return 0, 0, 0, 0
     with ui.progress("ingesting", total=len(files)) as advance:
         for f in files:
             rel = f.relative_to(path) if path.is_dir() else Path(f.name)
@@ -196,9 +203,12 @@ def _ingest_into_memory(mem: Memory, path: Path, *, wing: str, room: str) -> tup
                 continue
             for chunk in chunk_text(text):
                 mem.add(text=chunk, source=str(f), wing=wing, room=room)
-                total_drawers += 1
+                if mem.last_insert_was_new:
+                    total_drawers += 1
+                else:
+                    deduped += 1
             advance(description=f"ingesting  [dim]{rel}[/]")
-    return len(files) - skipped, total_drawers, skipped
+    return len(files) - skipped, total_drawers, skipped, deduped
 
 
 def _build_miniton(cfg: Config, *, yes: bool) -> bool:
@@ -450,7 +460,10 @@ def add(
         cfg = _cfg()
         mem = Memory(cfg)
         ui.section("add", f"{target}  → wing={wing} room={room}")
-        with ui.spinner(f"fetching {target}"):
+        with ui.spinner(
+            f"fetching {target}",
+            phases=["Fetching page", "Extracting body", "Cleaning markdown"],
+        ):
             from superton.puller import pull_url
 
             page = asyncio.run(pull_url(target))
@@ -477,10 +490,13 @@ def add(
     cfg = _cfg()
     mem = Memory(cfg)
     ui.section("add", f"{path}  → wing={wing} room={room}")
-    files, total_drawers, _skipped = _ingest_into_memory(mem, path, wing=wing, room=room)
+    files, total_drawers, _skipped, deduped = _ingest_into_memory(mem, path, wing=wing, room=room)
     mem.close()
     ui.blank()
-    ui.ok(f"ingested {total_drawers} drawers", f"from {files} file(s)")
+    summary = f"from {files} file(s)"
+    if deduped:
+        summary += f"  ·  {deduped} deduped"
+    ui.ok(f"ingested {total_drawers} drawers", summary)
 
 
 @app.command()
@@ -511,26 +527,39 @@ def pull(
 
     total_pages = 0
     total_drawers = 0
+    deduped = 0
 
-    async def _run() -> None:
-        nonlocal total_pages, total_drawers
-        async for page in pull_site(
-            url,
-            max_pages=max_pages,
-            render_js=render_js,
-            concurrency=concurrency,
-        ):
-            total_pages += 1
-            for chunk in chunk_text(page.markdown):
-                mem.add(text=chunk, source=page.url, wing=wing, room=room)
-                total_drawers += 1
+    # Live status text is cheap to update; show it from inside the spinner
+    # so a long crawl visibly progresses instead of feeling hung.
+    with ui.spinner(
+        f"pulling {url}",
+        phases=["Discovering pages", "Fetching", "Extracting content", "Embedding chunks"],
+    ) as set_status:
+        async def _run() -> None:
+            nonlocal total_pages, total_drawers, deduped
+            async for page in pull_site(
+                url,
+                max_pages=max_pages,
+                render_js=render_js,
+                concurrency=concurrency,
+            ):
+                total_pages += 1
+                for chunk in chunk_text(page.markdown):
+                    mem.add(text=chunk, source=page.url, wing=wing, room=room)
+                    if mem.last_insert_was_new:
+                        total_drawers += 1
+                    else:
+                        deduped += 1
+                set_status(f"pulling {url}  ·  {total_pages}/{max_pages} pages  ·  {total_drawers} drawers")
 
-    with ui.spinner(f"pulling {url}"):
         asyncio.run(_run())
 
     mem.close()
     ui.blank()
-    ui.ok(f"pulled {total_pages} pages → {total_drawers} drawers")
+    summary = f"pulled {total_pages} pages → {total_drawers} drawers"
+    if deduped:
+        summary += f"  ·  {deduped} deduped"
+    ui.ok(summary)
 
 
 @app.command()
@@ -545,12 +574,12 @@ def refresh(
     removed = 0
     for f in walk(path):
         removed += mem.forget_source(str(f))
-    files, drawers, _skipped = _ingest_into_memory(mem, path, wing=wing, room=room)
+    files, drawers, _skipped, _deduped = _ingest_into_memory(mem, path, wing=wing, room=room)
     mem.close()
-    ui.ok(
-        f"refreshed {files} file(s)",
-        f"removed {removed} stale drawers, added {drawers}",
-    )
+    ui.blank()
+    ui.diff_summary(removed=removed, added=drawers)
+    ui.blank()
+    ui.ok(f"refreshed {files} file(s)")
 
 
 @app.command()
@@ -562,7 +591,10 @@ def ask(
     """Ask Miniton a question. Answer is grounded in palace drawers."""
     cfg = _cfg()
     mem = Memory(cfg)
-    with ui.spinner("retrieving from palace"):
+    with ui.spinner(
+        "retrieving from palace",
+        phases=["Searching palace", "Ranking drawers", "Re-scoring sources", "Composing context"],
+    ):
         raw_hits = mem.search(question, limit=max(k, 8))
     from superton.shell import (
         ANSWER_CONTEXT_DRAWERS,
@@ -643,7 +675,8 @@ def ask(
         if hits:
             ui.citations(hits[:3])
     except (OllamaError, ModelError) as e:
-        ui.err(f"{e}")
+        log.error("ask failed: %s", e)
+        errors.render(e)
     finally:
         model.close()
         mem.close()
@@ -674,9 +707,13 @@ def list_drawers(
 def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
     """Semantic search across drawers with SQLite fallback."""
     mem = Memory(_cfg())
-    with ui.spinner(f"searching palace for {query!r}"):
+    with ui.spinner(
+        f"searching palace for {query!r}",
+        phases=["Embedding query", "Scanning drawers", "Re-ranking hits"],
+    ):
         hits = mem.search(query, limit=limit)
     if not hits:
+        ui.shimmer(f"  scanning palace for {query!r}…")
         ui.warn("no drawers matched")
         mem.close()
         return
@@ -837,10 +874,30 @@ def doctor() -> None:
 
 
 @app.command()
+def tui() -> None:
+    """Launch the Textual TUI (opt-in in 0.2.0).
+
+    Requires the optional `textual` dependency: `pip install 'superton[tui]'`.
+    See docs/TUI_ARCHITECTURE.md for the design, key bindings, and roadmap
+    for becoming the default interactive mode.
+    """
+    try:
+        from superton.tui.app import run_tui
+    except ImportError as e:
+        log.error("textual not installed: %s", e)
+        ui.err("textual is not installed", "install with: pip install 'superton[tui]'")
+        raise typer.Exit(1) from e
+    run_tui(_cfg())
+
+
+@app.command()
 def reindex() -> None:
     """Rebuild semantic index from the SQLite drawer store."""
     mem = Memory(_cfg())
-    with ui.spinner("rebuilding semantic index"):
+    with ui.spinner(
+        "rebuilding semantic index",
+        phases=["Reading drawers", "Computing embeddings", "Writing index"],
+    ):
         total = mem.reindex_semantic()
     s = mem.stats()
     mem.close()
@@ -904,7 +961,10 @@ def import_claude_code(
     from superton.importers.claude_code import ClaudeCodeImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing Claude Code sessions"):
+    with ui.spinner(
+        "importing Claude Code sessions",
+        phases=["Discovering sessions", "Parsing transcripts", "Indexing turns"],
+    ):
         sessions, drawers = ClaudeCodeImporter(mem).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {sessions} Claude Code sessions")
@@ -919,7 +979,10 @@ def import_chatgpt(
     from superton.importers.chatgpt import ChatGPTImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing ChatGPT conversations"):
+    with ui.spinner(
+        "importing ChatGPT conversations",
+        phases=["Reading export", "Parsing conversations", "Indexing messages"],
+    ):
         conversations, drawers = ChatGPTImporter(mem).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {conversations} ChatGPT conversations")
@@ -934,7 +997,10 @@ def import_cursor(
     from superton.importers.generic_threads import GenericThreadImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing Cursor threads"):
+    with ui.spinner(
+        "importing Cursor threads",
+        phases=["Discovering files", "Parsing JSONL", "Indexing"],
+    ):
         files, drawers = GenericThreadImporter(
             mem, "cursor", Path.home() / ".cursor"
         ).import_all(root, replace=replace)
@@ -951,7 +1017,10 @@ def import_amp(
     from superton.importers.generic_threads import GenericThreadImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing Amp threads"):
+    with ui.spinner(
+        "importing Amp threads",
+        phases=["Discovering files", "Parsing JSONL", "Indexing"],
+    ):
         files, drawers = GenericThreadImporter(
             mem, "amp", Path.home() / ".amp"
         ).import_all(root, replace=replace)
@@ -999,8 +1068,10 @@ def mcp_serve(
     cfg = _cfg()
     try:
         from mempalace.mcp_server import main as mcp_main
-    except Exception as e:
+    except ImportError as e:
+        log.error("mempalace mcp_server import failed: %s", e)
         ui.err("MemPalace MCP server unavailable", str(e))
+        ui.hint("install with [bold]uv pip install mempalace[/bold]")
         raise typer.Exit(1) from e
     ui.section("mcp serve", f"palace: {cfg.semantic_dir}")
     ui.hint("stdio transport · Ctrl+C to stop")
@@ -1020,7 +1091,9 @@ def mcp_serve(
     except SystemExit:
         raise
     except Exception as e:
+        log.exception("mcp server crashed")
         ui.err("mcp server crashed", str(e))
+        ui.hint("re-run with [bold]SUPERTON_LOG=debug[/bold] for the full traceback")
         raise typer.Exit(1) from e
     finally:
         _sys.argv = argv_backup
@@ -1039,13 +1112,19 @@ def dedup(
     cfg = _cfg()
     try:
         from mempalace.dedup import dedup_palace
-    except Exception as e:
+    except ImportError as e:
+        log.error("mempalace.dedup import failed: %s", e)
         ui.err("MemPalace dedup unavailable", str(e))
         raise typer.Exit(1) from e
     ui.section("dedup", f"threshold {threshold:.2f} · {'dry-run' if dry_run else 'APPLY'}")
-    with ui.spinner("scanning palace for duplicates"):
+    with ui.spinner(
+        "scanning palace for duplicates",
+        phases=["Loading drawers", "Computing similarities", "Grouping near-duplicates"],
+    ):
         try:
-            result = dedup_palace(
+            # mempalace's dedup_palace signature varies across versions —
+            # the TypeError fallback below handles older positional-only forms.
+            result = dedup_palace(  # type: ignore[call-arg]
                 palace_path=str(cfg.semantic_dir),
                 collection_name=cfg.semantic_collection,
                 threshold=threshold,

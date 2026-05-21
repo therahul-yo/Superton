@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
+from superton.logging import get_logger
+
+log = get_logger("ingest")
+
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 200
 
@@ -54,6 +58,7 @@ def read_file(path: Path) -> str:
             raise RuntimeError("python-docx not installed") from e
         d = docx.Document(str(path))
         return "\n\n".join(p.text for p in d.paragraphs)
+    log.debug("rejected unsupported file type: %s (%s)", suffix, path)
     raise ValueError(f"unsupported file type: {suffix}")
 
 

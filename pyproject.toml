@@ -40,8 +40,13 @@ web = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
+    "textual>=0.60.0",  # needed to test the TUI; ships separately as `[tui]` extra
+]
+tui = [
+    "textual>=0.60.0",
 ]
 
 [project.scripts]
@@ -84,3 +89,41 @@ ignore = ["E501", "B008"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:asyncio",
+]
+
+[tool.coverage.run]
+source = ["superton"]
+omit = [
+    "superton/blackhole.py",
+    "superton/puller/renderer.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+skip_covered = false
+
+[tool.mypy]
+python_version = "3.11"
+files = ["superton"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = false
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = [
+    "superton/blackhole.py",
+    "superton/puller/.*",
+]
+
+[[tool.mypy.overrides]]
+module = ["superton.memory", "superton.model", "superton.config", "superton.errors", "superton.logging", "superton.ingest"]
+disallow_untyped_defs = true

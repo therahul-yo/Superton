@@ -12,6 +12,9 @@ from pathlib import Path
 import httpx
 
 from superton.config import Config
+from superton.logging import get_logger
+
+log = get_logger("model")
 
 
 class ModelError(RuntimeError):
@@ -114,6 +117,7 @@ class Model:
     ) -> Iterator[str]:
         """Stream tokens from Miniton via /api/chat (structured messages)."""
         backend = self.backend()
+        log.debug("generate via backend=%s prompt_chars=%d", backend, len(prompt))
         if backend == "huggingface":
             yield from self._generate_huggingface(prompt, system=system)
             return
@@ -141,6 +145,7 @@ class Model:
                     if chunk.get("done"):
                         break
         except httpx.HTTPError as e:
+            log.error("ollama stream failed at %s: %s", self.cfg.ollama_url, e)
             raise OllamaError(f"failed to reach ollama at {self.cfg.ollama_url}: {e}") from e
 
     def _generate_huggingface(self, prompt: str, system: str | None = None) -> Iterator[str]:
@@ -163,6 +168,7 @@ class Model:
             r.raise_for_status()
             data = r.json()
         except httpx.HTTPError as e:
+            log.error("hugging face request failed for %s: %s", self.cfg.hf_model, e)
             raise HuggingFaceError(f"failed to reach Hugging Face model {self.cfg.hf_model}: {e}") from e
         if isinstance(data, list) and data:
             text = data[0].get("generated_text", "")

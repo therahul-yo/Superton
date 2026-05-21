@@ -1,0 +1,91 @@
+"""CLI integration tests via Typer's CliRunner."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from superton.cli import app
+
+
+@pytest.fixture
+def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("SUPERTON_HOME", str(tmp_path))
+    monkeypatch.setenv("SUPERTON_MEMORY_BACKEND", "sqlite")
+    return tmp_path
+
+
+def test_version_flag(env: Path):
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert "superton" in result.stdout.lower()
+
+
+def test_init_no_model_creates_palace(env: Path):
+    result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
+    assert result.exit_code == 0
+    assert (env / "palace").exists()
+
+
+def test_add_file_ingests_drawers(env: Path, tmp_path: Path):
+    note = tmp_path / "note.txt"
+    note.write_text("rate limiting via token bucket", encoding="utf-8")
+    result = CliRunner().invoke(app, ["add", str(note)])
+    assert result.exit_code == 0
+    assert "ingested" in result.stdout
+
+
+def test_add_missing_path_errors(env: Path):
+    result = CliRunner().invoke(app, ["add", "/nonexistent/path/here"])
+    assert result.exit_code == 1
+
+
+def test_list_empty_palace(env: Path):
+    result = CliRunner().invoke(app, ["list"])
+    assert result.exit_code == 0
+
+
+def test_stats_empty_palace(env: Path):
+    result = CliRunner().invoke(app, ["stats"])
+    assert result.exit_code == 0
+    assert "drawers" in result.stdout
+
+
+def test_search_no_matches(env: Path):
+    result = CliRunner().invoke(app, ["search", "nonsense_token_zzz"])
+    assert result.exit_code == 0
+
+
+def test_forget_missing_drawer_warns(env: Path):
+    result = CliRunner().invoke(app, ["forget", "deadbeef"])
+    assert result.exit_code == 0
+    assert "no drawer matched" in result.stdout
+
+
+def test_forget_source_no_match(env: Path):
+    result = CliRunner().invoke(app, ["forget-source", "missing.txt"])
+    assert result.exit_code == 0
+
+
+def test_theme_unknown_rejected(env: Path):
+    result = CliRunner().invoke(app, ["theme", "neopunk"])
+    assert result.exit_code == 1
+
+
+def test_theme_list_shows_active(env: Path):
+    result = CliRunner().invoke(app, ["theme"])
+    assert result.exit_code == 0
+    assert "nebula" in result.stdout
+
+
+def test_model_profile_unknown_rejected(env: Path):
+    result = CliRunner().invoke(app, ["model", "huge"])
+    assert result.exit_code == 1
+
+
+def test_doctor_runs(env: Path):
+    result = CliRunner().invoke(app, ["doctor"])
+    assert result.exit_code == 0
+    assert "doctor" in result.stdout or "home" in result.stdout

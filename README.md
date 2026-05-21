@@ -185,6 +185,10 @@ superton model better
 superton theme solar
 superton welcome                 # anytime tour of what's installed
 
+# full-screen TUI (opt-in, becomes default in 0.4.0 — see docs/TUI_ARCHITECTURE.md)
+pip install 'superton[tui]'
+superton tui
+
 # power tools
 superton mcp serve               # expose the palace to Claude / Cursor / Gemini
 superton dedup --dry-run         # find near-duplicate drawers

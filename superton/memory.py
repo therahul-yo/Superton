@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from superton.config import Config
+from superton.logging import get_logger
+
+log = get_logger("memory")
 
 
 @dataclass
@@ -26,7 +29,7 @@ class Drawer:
     wing: str = "default"
     room: str = "default"
     created_at: float = field(default_factory=time.time)
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -130,7 +133,7 @@ class Memory:
         self._db.commit()
 
     def add(self, text: str, source: str, *, wing: str = "default", room: str = "default",
-            metadata: dict | None = None) -> Drawer:
+            metadata: dict[str, Any] | None = None) -> Drawer:
         d = Drawer(
             id=_hash_id(text, source),
             text=text,
@@ -150,7 +153,10 @@ class Memory:
         # semantic upsert too — it's idempotent but doing it for every
         # duplicate during a re-ingest is wasted compute (and re-runs all
         # the embedding model work). Return the existing drawer so callers
-        # still see a stable Drawer object.
+        # still see a stable Drawer object. `cur.rowcount` is stashed so the
+        # in-memory dedup counter (used by ingest UI) can read it without
+        # changing the public method signature.
+        self._last_insert_was_new = cur.rowcount > 0
         if cur.rowcount == 0:
             existing = self.get(d.id)
             if existing is not None:
@@ -158,6 +164,15 @@ class Memory:
             return d
         self._index_semantic(d)
         return d
+
+    @property
+    def last_insert_was_new(self) -> bool:
+        """True iff the most recent `add()` actually inserted a new drawer.
+
+        Read this immediately after `add()` to track dedup hits without
+        changing the method's return type.
+        """
+        return getattr(self, "_last_insert_was_new", True)
 
     def search(self, query: str, *, limit: int = 5) -> list[SearchHit]:
         # Phase A: prefer MemPalace's benchmarked searcher (hybrid vector + BM25
@@ -171,10 +186,10 @@ class Memory:
             return semantic_hits
         return self._search_sqlite(query, limit=limit)
 
-    _mempalace_kwargs_cache: dict | None = None
+    _mempalace_kwargs_cache: dict[str, Any] | None = None
 
     @classmethod
-    def _mempalace_search_kwargs(cls, fn) -> dict:
+    def _mempalace_search_kwargs(cls, fn: Any) -> dict[str, Any]:
         """Return tuning kwargs accepted by the installed mempalace.search_memories.
 
         Cached on the class — `inspect.signature` is cheap but the lookup
@@ -232,6 +247,7 @@ class Memory:
             )
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("mempalace search failed; falling back: %s", e)
             return []
         if not isinstance(res, dict) or res.get("error"):
             if isinstance(res, dict):
@@ -355,7 +371,7 @@ class Memory:
         r = self._db.execute("SELECT * FROM drawers WHERE id = ?", (drawer_id,)).fetchone()
         return self._row_to_drawer(r) if r else None
 
-    def sources(self, *, limit: int = 100) -> list[dict]:
+    def sources(self, *, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.execute(
             """
             SELECT source, COUNT(*) AS drawers, MAX(created_at) AS latest
@@ -394,6 +410,7 @@ class Memory:
     def forget_source(self, query: str) -> int:
         sources = self.source_matches(query)
         if not sources:
+            log.info("forget_source: no matches for %r", query)
             return 0
         placeholders = ",".join("?" for _ in sources)
         rows = self._db.execute(
@@ -408,6 +425,7 @@ class Memory:
         self._db.commit()
         for drawer_id in drawer_ids:
             self._delete_semantic(drawer_id)
+        log.info("forgot %d drawers across %d source(s)", len(drawer_ids), len(sources))
         return len(drawer_ids)
 
     def forget(self, drawer_id: str) -> bool:
@@ -459,7 +477,9 @@ class Memory:
                 self._semantic_error = None
             except Exception as e:
                 self._semantic_error = str(e)
+                log.error("semantic reindex failed at batch of %d: %s", len(batch), e)
                 break
+        log.info("reindexed %d drawers into semantic store", total)
         return total
 
     def all(self, *, limit: int = 100) -> list[Drawer]:
@@ -468,7 +488,7 @@ class Memory:
         ).fetchall()
         return [self._row_to_drawer(r) for r in rows]
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         n = self._db.execute("SELECT COUNT(*) AS n FROM drawers").fetchone()["n"]
         wings = self._db.execute(
             "SELECT COUNT(DISTINCT wing) AS n FROM drawers"
@@ -490,7 +510,7 @@ class Memory:
     def _semantic_enabled(self) -> bool:
         return self.cfg.memory_backend in {"hybrid", "semantic", "mempalace"}
 
-    def _semantic(self, *, create: bool = True):
+    def _semantic(self, *, create: bool = True) -> Any | None:
         if not self._semantic_enabled():
             return None
         if self._semantic_collection is not None:
@@ -508,6 +528,7 @@ class Memory:
             return self._semantic_collection
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("could not open semantic collection: %s", e)
             return None
 
     def _index_semantic(self, drawer: Drawer) -> None:
@@ -528,6 +549,7 @@ class Memory:
             self._semantic_error = None
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("semantic upsert failed for %s: %s", drawer.id[:8], e)
 
     def _search_semantic(self, query: str, *, limit: int) -> list[SearchHit]:
         col = self._semantic(create=False)
@@ -545,6 +567,7 @@ class Memory:
             distances = (getattr(results, "distances", None) or [[]])[0]
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("local semantic query failed: %s", e)
             return []
 
         hits: list[SearchHit] = []
@@ -573,6 +596,7 @@ class Memory:
             self._semantic_error = None
         except Exception as e:
             self._semantic_error = str(e)
+            log.warning("semantic delete failed for %s: %s", drawer_id[:8], e)
 
     @staticmethod
     def _row_to_drawer(r: sqlite3.Row) -> Drawer:
@@ -587,7 +611,7 @@ class Memory:
         )
 
     @staticmethod
-    def _semantic_row_to_drawer(drawer_id: str, text: str, metadata: dict) -> Drawer:
+    def _semantic_row_to_drawer(drawer_id: str, text: str, metadata: dict[str, Any]) -> Drawer:
         raw_metadata = metadata.get("metadata_json", "{}")
         try:
             parsed_metadata = json.loads(raw_metadata)
