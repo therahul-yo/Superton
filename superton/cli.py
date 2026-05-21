@@ -874,6 +874,23 @@ def doctor() -> None:
 
 
 @app.command()
+def tui() -> None:
+    """Launch the Textual TUI (opt-in in 0.2.0).
+
+    Requires the optional `textual` dependency: `pip install 'superton[tui]'`.
+    See docs/TUI_ARCHITECTURE.md for the design, key bindings, and roadmap
+    for becoming the default interactive mode.
+    """
+    try:
+        from superton.tui.app import run_tui
+    except ImportError as e:
+        log.error("textual not installed: %s", e)
+        ui.err("textual is not installed", "install with: pip install 'superton[tui]'")
+        raise typer.Exit(1) from e
+    run_tui(_cfg())
+
+
+@app.command()
 def reindex() -> None:
     """Rebuild semantic index from the SQLite drawer store."""
     mem = Memory(_cfg())

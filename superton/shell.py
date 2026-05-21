@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from superton import __version__, errors, ui
+from superton import __version__, chat, errors, ui
 from superton.config import MODEL_PROFILES, Config, write_settings
 from superton.logging import get_logger
 from superton.memory import Memory
@@ -12,35 +12,34 @@ from superton.model import Model, ModelError
 
 log = get_logger("shell")
 
+# Constants re-exported for cli.py and other callers — kept in `chat` so the
+# TUI uses the same numbers.
+ANSWER_CONTEXT_DRAWERS = chat.ANSWER_CONTEXT_DRAWERS
+ANSWER_DRAWER_CHARS = chat.ANSWER_DRAWER_CHARS
+CONVERSATION_WINDOW = chat.CONVERSATION_WINDOW
+
+# Back-compat shims: the cli module imports these names from shell. They now
+# forward to the pure `chat` implementation so both the shell and the TUI
+# call the same code.
+_relevant_hits = chat.relevant_hits
+_any_token_match = chat.any_token_match
+_expand_hits_for_answer = chat.expand_hits_for_answer
+_looks_memory_specific = chat.looks_memory_specific
+_wants_source_expansion = chat.wants_source_expansion
+_query_tokens = chat.query_tokens
+_is_meta_question = chat.is_meta_question
+_should_retrieve = chat.should_retrieve
+_contextualize_query = chat.contextualize_query
+_format_suggestions = chat.format_suggestions
+_format_history = chat.format_history
+_build_system_prompt = chat.build_system_prompt
+
 console = ui.console()
 
-GREETINGS = {"hi", "hey", "hello", "yo", "sup", "hwy", "hye", "heey", "helo"}
-
-_TYPO_MAP = {
-    "waht": "what", "wut": "what", "wat": "what", "wha": "what",
-    "r": "are", "ur": "your", "u": "you", "ure": "your",
-    "teh": "the", "hwo": "how", "fo": "for",
-}
-
-# Questions about the assistant itself. Matching one of these means we should
-# NOT retrieve (random drawers only add noise) and should NOT include
-# conversation history (the 1.5B model otherwise pattern-matches on the
-# previous reply and repeats it verbatim).
-META_PHRASES = (
-    "what are you", "what r u", "what are u",
-    "who are you", "who r u", "who are u",
-    "what can you do", "what do you do",
-    "what is your use", "what is ur use", "whats your use", "whats ur use",
-    "tell me about yourself", "introduce yourself",
-    "what is this", "whats this", "wats this",
-    "how do you work", "how does this work",
-    "what r u for", "what are u for",
-)
-STOPWORDS = {
-    "a", "about", "an", "and", "are", "from", "give", "gimme", "how", "i",
-    "in", "is", "it", "me", "my", "of", "on", "the", "this", "to", "u",
-    "use", "what", "you",
-}
+# Re-exported for any external callers; the canonical sources live in `chat`.
+GREETINGS = chat.GREETINGS
+META_PHRASES = chat.META_PHRASES
+STOPWORDS = chat.STOPWORDS
 COMMAND_HELP = {
     "/add": "ingest a file or directory",
     "/doctor": "show runtime health",
@@ -311,110 +310,6 @@ def _ingest_path(mem: Memory, path: Path) -> tuple[int, int, int]:
     return files, drawers, deduped
 
 
-def _query_tokens(query: str) -> set[str]:
-    cleaned = "".join(ch.lower() if ch.isalnum() else " " for ch in query)
-    return {token for token in cleaned.split() if len(token) > 1 and token not in STOPWORDS}
-
-
-def _looks_memory_specific(query: str) -> bool:
-    normalized = query.lower()
-    personal_markers = (
-        "resume", "resue", "cv", "pdf", "document", "file",
-        "from my", "from his", "fromhis",
-    )
-    if any(marker in normalized for marker in personal_markers):
-        return True
-    return "project" in normalized and "my" in normalized
-
-
-def _relevant_hits(question: str, hits):
-    """Re-rank retrieval hits to prefer keyword-overlap, but never throw away
-    semantically strong matches.
-
-    Before Phase A (when retrieval was SQLite FTS + naive semantic), this was
-    a hard filter. With the MemPalace hybrid retriever it would reject
-    otherwise-correct hits just because the user's word isn't literally in
-    the drawer. We now treat keyword overlap as a bonus, not a gate.
-    """
-    if not hits:
-        return []
-    tokens = _query_tokens(question)
-    if not tokens:
-        return list(hits)
-    scored: list[tuple[float, int, object]] = []
-    for idx, hit in enumerate(hits):
-        haystack = f"{Path(hit.drawer.source).name} {hit.drawer.text[:2500]}".lower()
-        matches = sum(1 for token in tokens if token in haystack)
-        # Keep the original retrieval score as the base; overlap nudges the
-        # order but cannot drop a drawer.
-        base = float(getattr(hit, "score", 0.0) or 0.0)
-        boost = 0.15 * matches
-        scored.append((base + boost, -idx, hit))
-    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
-    return [h for _, _, h in scored]
-
-
-def _wants_source_expansion(question: str) -> bool:
-    """True when one hit from a document is unlikely to be enough."""
-    normalized = question.lower()
-    exhaustive_markers = (
-        "all", "every", "list", "projects", "project", "experience",
-        "resume", "resue", "cv", "document", "pdf", "full",
-    )
-    return any(marker in normalized for marker in exhaustive_markers)
-
-
-def _expand_hits_for_answer(
-    mem: Memory,
-    question: str,
-    hits,
-    *,
-    max_drawers: int = ANSWER_CONTEXT_DRAWERS,
-):
-    """For document/list queries, include sibling chunks from matched sources.
-
-    Retrieval ranking is good at finding the right document, but exhaustive
-    questions like "all projects from my resume" need multiple chunks from
-    that same source. This preserves ranked hits first, then fills the context
-    with nearby source siblings in ingestion order.
-    """
-    ranked = list(hits)
-    if not ranked or not _wants_source_expansion(question):
-        return ranked[:max_drawers]
-
-    expanded = []
-    seen_ids: set[str] = set()
-
-    def add_hit(hit) -> None:
-        drawer_id = getattr(hit.drawer, "id", "")
-        if drawer_id and drawer_id not in seen_ids:
-            seen_ids.add(drawer_id)
-            expanded.append(hit)
-
-    for hit in ranked:
-        add_hit(hit)
-
-    source_order: list[str] = []
-    seen_sources: set[str] = set()
-    for hit in ranked:
-        source = hit.drawer.source
-        if source not in seen_sources:
-            seen_sources.add(source)
-            source_order.append(source)
-
-    from superton.memory import SearchHit
-
-    for source in source_order:
-        source_drawers = mem.drawers_for_source(source, limit=max_drawers)
-        for drawer in source_drawers:
-            if len(expanded) >= max_drawers:
-                break
-            add_hit(SearchHit(drawer=drawer, score=0.70))
-        if len(expanded) >= max_drawers:
-            break
-    return expanded[:max_drawers]
-
-
 def _print_search_hits(hits) -> None:
     """Render hits as compact stacked cards.
 
@@ -623,230 +518,39 @@ def _switch_theme(name: str) -> Config:
     return Config.load()
 
 
-def _any_token_match(question: str, hits) -> bool:
-    """True if at least one hit shares any meaningful token with the query.
-
-    Used to decide whether to refuse a memory-specific question. We only look
-    at token *presence* — the ranking of hits is handled by `_relevant_hits`.
-    """
-    tokens = _query_tokens(question)
-    if not tokens:
-        return False
-    for hit in hits:
-        haystack = f"{Path(hit.drawer.source).name} {hit.drawer.text[:2500]}".lower()
-        if any(token in haystack for token in tokens):
-            return True
-    return False
-
-
-def _format_suggestions(raw_hits, limit: int = 2) -> str:
-    """Render a 'did you mean' list from raw retrieval hits.
-
-    Dedupes by source filename so the user sees distinct candidate documents,
-    not three chunks from the same file.
-    """
-    if not raw_hits:
-        return ""
-    seen: set[str] = set()
-    lines: list[str] = []
-    for hit in raw_hits:
-        src = Path(hit.drawer.source).name
-        if src in seen:
-            continue
-        seen.add(src)
-        lines.append(f"  • {src}")
-        if len(lines) >= limit:
-            break
-    return "\n".join(lines)
-
-
-def _is_meta_question(question: str) -> bool:
-    """True if the message is a greeting or a question about the assistant
-    itself (not about the user's stored memory).
-
-    We require an exact or near-exact phrase match. A loose substring check
-    silently swallows real memory queries like "what is this file" because
-    they contain "what is this".
-    """
-    normalized = question.lower().strip(" !?.")
-    if normalized in GREETINGS:
-        return True
-    # Normalize common typos word-by-word before phrase matching
-    fixed = " ".join(_TYPO_MAP.get(w, w) for w in normalized.split())
-    for phrase in META_PHRASES:
-        if fixed == phrase:
-            return True
-        # Allow a small amount of trailing filler ("what are you exactly")
-        # but never enough that a follow-on noun like "file" or "document"
-        # could sneak in. Cap at +1 token beyond the phrase length.
-        phrase_len = len(phrase.split())
-        if fixed.startswith(phrase + " ") and len(fixed.split()) <= phrase_len + 1:
-            return True
-    return False
-
-
-def _should_retrieve(question: str) -> bool:
-    # Skip retrieval for greetings and meta-questions. Random drawers only
-    # confuse the small model on these.
-    return not _is_meta_question(question)
-
-
-def _build_system_prompt(*, has_drawers: bool) -> str:
-    """Two distinct prompts — one for grounded answers, one for free-form.
-
-    Branching on the presence of drawers makes the instruction unambiguous
-    for small (1.5B) models. When drawers exist, we forbid the refuse path.
-    When they don't, the model answers as a normal local assistant.
-    """
-    if has_drawers:
-        return (
-            "You are Miniton, a local assistant in the SuperTon CLI. "
-            "MEMORY DRAWERS from the user's palace are supplied below — the "
-            "user has already given you access to them.\n\n"
-            "Your job:\n"
-            "- Use ONLY the drawers to answer. Quote specific facts from them.\n"
-            "- If asked for all/list projects, scan every supplied drawer and "
-            "list every distinct project you can find.\n"
-            "- For vague questions like 'X details', 'tell me about X', or "
-            "'summary', produce 3-6 concise bullet points that summarize what "
-            "the drawers say about the subject.\n"
-            "- Cite drawer ids inline like [abcd1234] when quoting.\n"
-            "- Never ask for a file, link, or path — the user has already "
-            "ingested it.\n"
-            "- Never say 'I do not have that in memory'. The drawers are "
-            "right here. Read them and answer.\n"
-            "- Keep answers under 8 lines unless the user asks for detail."
-        )
-    return (
-        "You are Miniton — a small local AI assistant built into the "
-        "SuperTon CLI. You run entirely on the user's machine via Ollama "
-        "and answer questions grounded in their personal palace of memories "
-        "(notes, documents, past AI-tool conversations). No memory drawers "
-        "were retrieved for this message, so answer briefly and "
-        "conversationally as a normal assistant. If asked who you are or "
-        "what you do, give a short one-paragraph self-introduction. Keep "
-        "answers under 6 lines."
-    )
-
-
-# --- conversation memory ------------------------------------------------------
-
-CONVERSATION_WINDOW = 6  # keep last N (user, assistant) turns
-
-
-def _format_history(history: list[tuple[str, str]]) -> str:
-    """Render recent turns for the prompt — compact, role-tagged."""
-    if not history:
-        return ""
-    lines: list[str] = []
-    for role, text in history[-CONVERSATION_WINDOW:]:
-        lines.append(f"{role}: {text.strip()}")
-    return "\n".join(lines)
-
-
-def _contextualize_query(question: str, history: list[tuple[str, str]] | None) -> str:
-    """For short follow-up questions, prepend the most recent user turn so
-    retrieval stays on the current conversation topic.
-
-    Without this, 'check pdf source' after 'my resume memory' re-runs
-    semantic search against only 'check pdf source' and typically pulls
-    unrelated Claude Code file-listing drawers.
-    """
-    if not history:
-        return question
-    # A 'short follow-up' is anything with fewer than 5 whitespace-separated
-    # words. Covers cases like 'check pdf source', 'and the projects?',
-    # 'what about python', etc.
-    if len(question.split()) >= 5:
-        return question
-    last_user = None
-    for role, text in reversed(history):
-        if role == "user":
-            last_user = text
-            break
-    if not last_user:
-        return question
-    return f"{last_user} {question}"
-
-
 def _answer(
     mem: Memory,
     model: Model,
     question: str,
     history: list[tuple[str, str]] | None = None,
 ) -> str:
-    """Answer a single user message. Returns the assistant text so callers
-    can append it to conversation history."""
-    search_query = _contextualize_query(question, history)
-    raw_hits = mem.search(search_query, limit=8) if _should_retrieve(question) else []
-    hits = _expand_hits_for_answer(mem, question, _relevant_hits(question, raw_hits))
-    # For memory-specific queries (resume, document, etc.) we refuse
-    # when no retrieved drawer shares even a single meaningful token with the
-    # query. This keeps Miniton from confabulating an answer from drawers
-    # that were semantically nearby but talk about something unrelated.
-    if _looks_memory_specific(question) and not _any_token_match(question, hits):
-        base = "I do not have matching memory for that."
-        suggestions = _format_suggestions(raw_hits)
-        if suggestions:
-            refusal = (
-                f"{base}\n\n"
-                "Did you mean one of these?\n"
-                f"{suggestions}\n\n"
-                "Ask about one of those, or add the source with `/add <path>`."
-            )
-        else:
-            refusal = (
-                f"{base} Add the resume or document first with "
-                "`/add <path>` or paste the file path directly."
-            )
-        _print_assistant(refusal)
-        return refusal
-    context = "\n\n---\n\n".join(
-        f"[drawer:{h.drawer.id[:8]} source:{Path(h.drawer.source).name}]\n"
-        f"{h.drawer.text[:ANSWER_DRAWER_CHARS]}"
-        for h in hits[:ANSWER_CONTEXT_DRAWERS]
-    )
-    system = _build_system_prompt(has_drawers=bool(hits))
-    if _is_meta_question(question):
-        # For greetings and 'what are you' style questions, hand the model a
-        # clean slate: no drawers (already empty), no history. Otherwise the
-        # small model pattern-matches on its previous reply and repeats it.
-        chat_history: list[dict[str, str]] = []
-    else:
-        chat_history = [
-            {"role": "user" if role == "user" else "assistant", "content": text}
-            for role, text in (history or [])[-CONVERSATION_WINDOW * 2:]
-        ]
-    if hits:
-        parts = [f"Memory drawers:\n\n{context}", f"User message: {question}"]
-        parts.append("Write a concise answer, not a dump of the context.")
-        prompt = "\n\n".join(parts)
-    else:
-        prompt = question
-    try:
-        def generate_answer():
-            if hasattr(model, "backend") and model.backend() is None and hasattr(model, "start_ollama"):
-                model.start_ollama(timeout=5.0)
-            yield from model.generate(prompt, system=system, history=chat_history)
+    """Render a chat turn through the shell's Rich console.
 
-        answer = ui.stream_answer(generate_answer())
+    The retrieval / refusal / prompt-building logic lives in `superton.chat`
+    so the TUI calls the exact same code. This function is the *display*
+    half: it takes the planned answer, streams tokens through
+    `ui.stream_answer`, and prints citations.
+    """
+    plan = chat.plan_answer(mem, question, history=history)
+    if plan.refusal is not None:
+        _print_assistant(plan.refusal)
+        return plan.refusal
+
+    try:
+        answer = ui.stream_answer(chat.stream_answer(model, plan))
     except ModelError as e:
         log.warning("model backend unavailable during answer: %s", e)
-        if hits:
-            answer = (
-                "I found related memory, but the model backend is unavailable. "
-                f"Top match: [{hits[0].drawer.id[:8]}] {Path(hits[0].drawer.source).name}"
-            )
-        else:
-            answer = "Miniton is not available. Run `superton init` to start/build the local model."
-        _print_assistant(answer, hits=hits)
-        return answer
+        text = chat.fallback_answer(plan)
+        _print_assistant(text, hits=plan.hits)
+        return text
+
     if not answer:
-        answer = "I found related memory, but Miniton returned an empty answer."
-        _print_assistant(answer, hits=hits)
-        return answer
-    if hits:
-        ui.citations(hits[:3])
+        text = "I found related memory, but Miniton returned an empty answer."
+        _print_assistant(text, hits=plan.hits)
+        return text
+
+    if plan.hits:
+        ui.citations(plan.hits[:3])
     ui.blank()
     return answer
 
