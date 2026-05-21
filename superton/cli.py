@@ -460,7 +460,10 @@ def add(
         cfg = _cfg()
         mem = Memory(cfg)
         ui.section("add", f"{target}  → wing={wing} room={room}")
-        with ui.spinner(f"fetching {target}"):
+        with ui.spinner(
+            f"fetching {target}",
+            phases=["Fetching page", "Extracting body", "Cleaning markdown"],
+        ):
             from superton.puller import pull_url
 
             page = asyncio.run(pull_url(target))
@@ -528,7 +531,10 @@ def pull(
 
     # Live status text is cheap to update; show it from inside the spinner
     # so a long crawl visibly progresses instead of feeling hung.
-    with ui.spinner(f"pulling {url}") as set_status:
+    with ui.spinner(
+        f"pulling {url}",
+        phases=["Discovering pages", "Fetching", "Extracting content", "Embedding chunks"],
+    ) as set_status:
         async def _run() -> None:
             nonlocal total_pages, total_drawers, deduped
             async for page in pull_site(
@@ -570,10 +576,10 @@ def refresh(
         removed += mem.forget_source(str(f))
     files, drawers, _skipped, _deduped = _ingest_into_memory(mem, path, wing=wing, room=room)
     mem.close()
-    ui.ok(
-        f"refreshed {files} file(s)",
-        f"removed {removed} stale drawers, added {drawers}",
-    )
+    ui.blank()
+    ui.diff_summary(removed=removed, added=drawers)
+    ui.blank()
+    ui.ok(f"refreshed {files} file(s)")
 
 
 @app.command()
@@ -585,7 +591,10 @@ def ask(
     """Ask Miniton a question. Answer is grounded in palace drawers."""
     cfg = _cfg()
     mem = Memory(cfg)
-    with ui.spinner("retrieving from palace"):
+    with ui.spinner(
+        "retrieving from palace",
+        phases=["Searching palace", "Ranking drawers", "Re-scoring sources", "Composing context"],
+    ):
         raw_hits = mem.search(question, limit=max(k, 8))
     from superton.shell import (
         ANSWER_CONTEXT_DRAWERS,
@@ -698,9 +707,13 @@ def list_drawers(
 def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
     """Semantic search across drawers with SQLite fallback."""
     mem = Memory(_cfg())
-    with ui.spinner(f"searching palace for {query!r}"):
+    with ui.spinner(
+        f"searching palace for {query!r}",
+        phases=["Embedding query", "Scanning drawers", "Re-ranking hits"],
+    ):
         hits = mem.search(query, limit=limit)
     if not hits:
+        ui.shimmer(f"  scanning palace for {query!r}…")
         ui.warn("no drawers matched")
         mem.close()
         return
@@ -864,7 +877,10 @@ def doctor() -> None:
 def reindex() -> None:
     """Rebuild semantic index from the SQLite drawer store."""
     mem = Memory(_cfg())
-    with ui.spinner("rebuilding semantic index"):
+    with ui.spinner(
+        "rebuilding semantic index",
+        phases=["Reading drawers", "Computing embeddings", "Writing index"],
+    ):
         total = mem.reindex_semantic()
     s = mem.stats()
     mem.close()
@@ -928,7 +944,10 @@ def import_claude_code(
     from superton.importers.claude_code import ClaudeCodeImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing Claude Code sessions"):
+    with ui.spinner(
+        "importing Claude Code sessions",
+        phases=["Discovering sessions", "Parsing transcripts", "Indexing turns"],
+    ):
         sessions, drawers = ClaudeCodeImporter(mem).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {sessions} Claude Code sessions")
@@ -943,7 +962,10 @@ def import_chatgpt(
     from superton.importers.chatgpt import ChatGPTImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing ChatGPT conversations"):
+    with ui.spinner(
+        "importing ChatGPT conversations",
+        phases=["Reading export", "Parsing conversations", "Indexing messages"],
+    ):
         conversations, drawers = ChatGPTImporter(mem).import_all(root, replace=replace)
     mem.close()
     ui.ok(f"imported {drawers} drawers", f"from {conversations} ChatGPT conversations")
@@ -958,7 +980,10 @@ def import_cursor(
     from superton.importers.generic_threads import GenericThreadImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing Cursor threads"):
+    with ui.spinner(
+        "importing Cursor threads",
+        phases=["Discovering files", "Parsing JSONL", "Indexing"],
+    ):
         files, drawers = GenericThreadImporter(
             mem, "cursor", Path.home() / ".cursor"
         ).import_all(root, replace=replace)
@@ -975,7 +1000,10 @@ def import_amp(
     from superton.importers.generic_threads import GenericThreadImporter
 
     mem = Memory(_cfg())
-    with ui.spinner("importing Amp threads"):
+    with ui.spinner(
+        "importing Amp threads",
+        phases=["Discovering files", "Parsing JSONL", "Indexing"],
+    ):
         files, drawers = GenericThreadImporter(
             mem, "amp", Path.home() / ".amp"
         ).import_all(root, replace=replace)
@@ -1072,7 +1100,10 @@ def dedup(
         ui.err("MemPalace dedup unavailable", str(e))
         raise typer.Exit(1) from e
     ui.section("dedup", f"threshold {threshold:.2f} · {'dry-run' if dry_run else 'APPLY'}")
-    with ui.spinner("scanning palace for duplicates"):
+    with ui.spinner(
+        "scanning palace for duplicates",
+        phases=["Loading drawers", "Computing similarities", "Grouping near-duplicates"],
+    ):
         try:
             # mempalace's dedup_palace signature varies across versions —
             # the TypeError fallback below handles older positional-only forms.

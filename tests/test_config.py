@@ -9,9 +9,9 @@ import pytest
 
 from superton.config import (
     MODEL_PROFILES,
-    Config,
     VALID_BACKENDS,
     VALID_MEMORY_BACKENDS,
+    Config,
     detect_ram_gb,
     write_settings,
 )

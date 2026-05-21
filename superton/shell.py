@@ -128,6 +128,8 @@ def _prompt(status: _Status | None = None) -> str:
 
         class SlashCompleter(Completer):
             def get_completions(self, document, complete_event):
+                from prompt_toolkit.formatted_text import FormattedText
+
                 text = document.text_before_cursor
                 if not text.startswith("/"):
                     return
@@ -136,21 +138,36 @@ def _prompt(status: _Status | None = None) -> str:
                     word = parts[-1]
                     for profile in MODEL_PROFILES:
                         if profile.startswith(word) or word in profile:
-                            yield Completion(profile, start_position=-len(word))
+                            yield Completion(
+                                profile,
+                                start_position=-len(word),
+                                display_meta=MODEL_PROFILES[profile]["label"],
+                            )
                     return
                 if len(parts) == 2 and parts[0] == "/theme":
                     word = parts[-1]
-                    for name in ui.THEMES:
-                        if name.startswith(word) or word in name:
-                            yield Completion(name, start_position=-len(word))
+                    for theme_obj in ui.list_themes():
+                        if theme_obj.name.startswith(word) or word in theme_obj.name:
+                            yield Completion(
+                                theme_obj.name,
+                                start_position=-len(word),
+                                display_meta=theme_obj.label,
+                            )
                     return
                 if " " in text:
                     return
                 for command, help_text in COMMAND_HELP.items():
                     if command.startswith(text):
+                        # Color the leading slash separately so the menu visually
+                        # echoes the toolbar/lexer treatment of slash commands.
+                        styled = FormattedText([
+                            ("class:completion.slash", "/"),
+                            ("class:completion.cmd", command[1:]),
+                        ])
                         yield Completion(
                             command,
                             start_position=-len(text),
+                            display=styled,
                             display_meta=help_text,
                         )
 
@@ -187,6 +204,14 @@ def _prompt(status: _Status | None = None) -> str:
             "glyph": primary_pt,
             "bottom-toolbar": f"{muted_pt} noreverse",
             "bottom-toolbar.text": muted_pt,
+            # Slash-command completion menu: leading slash in primary, the
+            # rest of the command in the muted accent; meta column dim.
+            "completion.slash": primary_pt,
+            "completion.cmd": secondary_pt,
+            "completion-menu.completion": muted_pt,
+            "completion-menu.completion.current": f"reverse {primary_pt}",
+            "completion-menu.meta.completion": muted_pt,
+            "completion-menu.meta.completion.current": f"reverse {muted_pt}",
         })
 
         # Persistent command history across shell sessions.
@@ -473,7 +498,10 @@ def _run_import(mem: Memory, spec: str) -> None:
         if name == "claude-code":
             from superton.importers.claude_code import ClaudeCodeImporter
 
-            with ui.spinner("importing Claude Code sessions"):
+            with ui.spinner(
+                "importing Claude Code sessions",
+                phases=["Discovering sessions", "Parsing transcripts", "Indexing turns"],
+            ):
                 sessions, drawers = ClaudeCodeImporter(mem).import_all(None)
             ui.ok(f"imported {drawers} drawers", f"from {sessions} Claude Code sessions")
         elif name == "chatgpt":
@@ -488,14 +516,20 @@ def _run_import(mem: Memory, spec: str) -> None:
                 ui.warn(f"not found: {path}")
                 ui.blank()
                 return
-            with ui.spinner("importing ChatGPT conversations"):
+            with ui.spinner(
+                "importing ChatGPT conversations",
+                phases=["Reading export", "Parsing conversations", "Indexing messages"],
+            ):
                 conversations, drawers = ChatGPTImporter(mem).import_all(path)
             ui.ok(f"imported {drawers} drawers", f"from {conversations} ChatGPT conversations")
         elif name in {"cursor", "amp"}:
             from superton.importers.generic_threads import GenericThreadImporter
 
             default_root = Path.home() / f".{name}"
-            with ui.spinner(f"importing {name} threads"):
+            with ui.spinner(
+                f"importing {name} threads",
+                phases=["Discovering files", "Parsing", "Indexing"],
+            ):
                 files, drawers = GenericThreadImporter(
                     mem, name, default_root
                 ).import_all(None)
@@ -910,14 +944,16 @@ def run() -> None:
                         removed += mem.forget_source(str(file))
                 files, drawers, _deduped = _ingest_path(mem, path)
                 ui.blank()
-                ui.ok(
-                    f"refreshed {files} file(s)",
-                    f"removed {removed}, added {drawers}",
-                )
+                ui.diff_summary(removed=removed, added=drawers)
+                ui.blank()
+                ui.ok(f"refreshed {files} file(s)")
                 ui.blank()
                 continue
             if text == "/reindex":
-                with ui.spinner("rebuilding semantic index"):
+                with ui.spinner(
+                    "rebuilding semantic index",
+                    phases=["Reading drawers", "Computing embeddings", "Writing index"],
+                ):
                     total = mem.reindex_semantic()
                 ui.blank()
                 ui.ok(f"reindexed {total} drawers")
@@ -949,10 +985,14 @@ def run() -> None:
                 continue
             if text.startswith("/search "):
                 query = text.removeprefix("/search ").strip()
-                with ui.spinner(f"searching for {query!r}"):
+                with ui.spinner(
+                    f"searching for {query!r}",
+                    phases=["Embedding query", "Scanning drawers", "Re-ranking hits"],
+                ):
                     hits = _relevant_hits(query, mem.search(query, limit=8))
                 if not hits:
                     ui.blank()
+                    ui.shimmer(f"  scanning palace for {query!r}…")
                     ui.hint("no drawers matched")
                     ui.blank()
                     continue

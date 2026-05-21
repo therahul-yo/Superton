@@ -7,7 +7,8 @@ import logging
 
 import pytest
 
-from superton import errors, logging as slog
+from superton import errors
+from superton import logging as slog
 from superton.errors import (
     ConfigError,
     IngestError,
