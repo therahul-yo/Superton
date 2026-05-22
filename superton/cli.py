@@ -1022,15 +1022,27 @@ def doctor() -> None:
 def tui() -> None:
     """Launch the Textual TUI (opt-in in 0.2.0).
 
-    Requires the optional `textual` dependency: `pip install 'superton[tui]'`.
-    See docs/TUI_ARCHITECTURE.md for the design, key bindings, and roadmap
-    for becoming the default interactive mode.
+    Requires the optional `textual` dependency. The install.sh script
+    pulls it in by default; pre-existing installs need a one-line
+    refresh. See docs/TUI_ARCHITECTURE.md for the design + key bindings.
     """
     try:
         from superton.tui.app import run_tui
     except ImportError as e:
         log.error("textual not installed: %s", e)
-        ui.err("textual is not installed", "install with: pip install 'superton[tui]'")
+        ui.err("textual is not installed", str(e))
+        ui.blank()
+        # Detect the installer flavour so the hint matches what the user
+        # actually used to install SuperTon — keeps the recovery one
+        # copy-paste away.
+        sys_exec = sys.executable
+        if "/uv/tools/" in sys_exec or "/uv-cache/" in sys_exec:
+            ui.hint("install with:  [bold]uv tool install --with textual superton --force[/]")
+        elif shutil.which("pipx"):
+            ui.hint("install with:  [bold]pipx inject superton textual[/]")
+        else:
+            ui.hint("install with:  [bold]pip install 'superton[tui]'[/]")
+        ui.hint("or rerun:      [bold]curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh[/]")
         raise typer.Exit(1) from e
     run_tui(_cfg())
 
@@ -1088,15 +1100,36 @@ def close_models(
         subprocess.run(["pkill", "-f", "ollama serve"], check=False)
 
 
+def _detect_install_method() -> str:
+    """Best-effort sniff of how SuperTon was installed.
+
+    Looks at `sys.executable` because the running interpreter lives inside
+    the installer's venv — uv puts it under `…/uv/tools/superton/`, pipx
+    under `…/pipx/venvs/superton/`, plain pip in the user's site-packages
+    or a venv. Returns one of {"uv", "pipx", "pip", "unknown"}.
+    """
+    exe = Path(sys.executable).resolve()
+    text = str(exe)
+    if "/uv/tools/" in text or "uv\\tools\\" in text:
+        return "uv"
+    if "/pipx/" in text or "pipx\\" in text:
+        return "pipx"
+    return "pip"
+
+
 def _tool_uninstall_command() -> list[str]:
-    """Best-effort command for removing the installed SuperTon CLI."""
-    exe = shutil.which("superton")
-    if exe:
-        exe_path = Path(exe).resolve()
-        if "uv/tools/superton" in str(exe_path) and shutil.which("uv"):
-            return ["uv", "tool", "uninstall", "superton"]
-        if shutil.which("pipx"):
-            return ["pipx", "uninstall", "superton"]
+    """Best-effort command for removing the installed SuperTon CLI.
+
+    Used both to *show* the user the command (preflight) and to actually
+    run it. Detection prefers the interpreter path over `shutil.which`
+    because the latter can resolve to a stale shim from a different
+    installer.
+    """
+    method = _detect_install_method()
+    if method == "uv" and shutil.which("uv"):
+        return ["uv", "tool", "uninstall", "superton"]
+    if method == "pipx" and shutil.which("pipx"):
+        return ["pipx", "uninstall", "superton"]
     return [sys.executable, "-m", "pip", "uninstall", "-y", "superton"]
 
 
@@ -1119,19 +1152,55 @@ def uninstall(
         "--all-models/--keep-base-models",
         help="remove the configured base and embedding Ollama models",
     ),
-    tool: bool = typer.Option(False, "--tool", help="also uninstall the SuperTon CLI tool"),
+    tool: bool = typer.Option(
+        True,
+        "--tool/--keep-tool",
+        help="also remove the installed `superton` CLI binary (default: yes)",
+    ),
 ) -> None:
-    """Remove SuperTon local data, models, and optionally the installed CLI tool."""
+    """Remove SuperTon local data, models, and the installed CLI tool.
+
+    By default this removes **everything**: the palace at
+    `~/Library/Application Support/superton` (or `$SUPERTON_HOME`), the
+    Ollama tags for Miniton + base + embed, and the `superton` CLI
+    binary itself. Pass `--keep-data`, `--keep-models`, or `--keep-tool`
+    to opt out of any stage.
+
+    The CLI removal uses `os.execvp` so the binary can replace itself —
+    a vanilla `subprocess.run` from inside the running process often
+    leaves a stale shim in `~/.local/bin/superton`.
+    """
     cfg = _cfg()
     model_names = _uninstall_model_names(cfg, models=models, all_models=all_models)
+    install_method = _detect_install_method()
+    tool_cmd = _tool_uninstall_command()
 
     ui.section("uninstall superton")
+    ui.blank()
+    rows: list[tuple[str, str, str]] = []
     if data:
-        ui.step(f"remove data: {cfg.home}")
+        rows.append((
+            "→" if cfg.home.exists() else "-",
+            "palace + config",
+            str(cfg.home),
+        ))
+    else:
+        rows.append(("-", "palace + config", "kept (--keep-data)"))
     if model_names:
-        ui.step("remove ollama models: " + ", ".join(model_names))
+        rows.append(("→", "ollama models", ", ".join(model_names)))
+    else:
+        rows.append(("-", "ollama models", "kept (--keep-models)"))
     if tool:
-        ui.step("remove CLI tool: " + " ".join(_tool_uninstall_command()))
+        rows.append(("→", "superton CLI", " ".join(tool_cmd) + f"  ({install_method})"))
+    else:
+        rows.append(("-", "superton CLI", "kept (--keep-tool)"))
+    ui.preflight_card(
+        "about to remove",
+        rows,
+        summary="This wipes the palace and unlinks the binary so nothing remains in your PATH.",
+    )
+    ui.blank()
+
     if not any((data, model_names, tool)):
         ui.warn("nothing selected for removal")
         return
@@ -1140,32 +1209,66 @@ def uninstall(
         ui.warn("uninstall cancelled")
         return
 
-    if model_names:
-        if shutil.which("ollama") is None:
-            ui.warn("ollama not found; skipped model removal")
-        else:
-            model = Model(cfg)
-            for name in model_names:
-                model.stop(name)
-                result = subprocess.run(["ollama", "rm", name], check=False)
-                if result.returncode == 0:
-                    ui.ok(f"removed model {name}")
-                else:
-                    ui.warn(f"model not removed: {name}")
-            model.close()
+    total_steps = sum(int(bool(x)) for x in (model_names, data, tool))
+    step = 0
 
-    if data and cfg.home.exists():
-        shutil.rmtree(cfg.home)
-        ui.ok(f"removed {cfg.home}")
-    elif data:
-        ui.step(f"not found: {cfg.home}")
+    if model_names:
+        step += 1
+        with ui.stage("removing ollama models", step=step, total=total_steps):
+            if shutil.which("ollama") is None:
+                ui.stage_warn(
+                    "ollama not found; skipped model removal",
+                    hint="run `ollama rm miniton` manually after installing ollama",
+                )
+            else:
+                model = Model(cfg)
+                for name in model_names:
+                    model.stop(name)
+                    result = subprocess.run(["ollama", "rm", name], check=False)
+                    if result.returncode == 0:
+                        ui.stage_ok(f"removed {name}")
+                    else:
+                        ui.stage_warn(
+                            f"model not removed: {name}",
+                            hint=f"try `ollama rm {name}` manually",
+                        )
+                model.close()
+
+    if data:
+        step += 1
+        with ui.stage("removing palace", step=step, total=total_steps):
+            if cfg.home.exists():
+                shutil.rmtree(cfg.home)
+                ui.stage_ok(f"removed {cfg.home}")
+            else:
+                ui.stage_skip(f"already gone: {cfg.home}")
 
     if tool:
-        result = subprocess.run(_tool_uninstall_command(), check=False)
-        if result.returncode == 0:
-            ui.ok("removed SuperTon CLI tool")
-        else:
-            ui.warn("CLI tool uninstall command failed")
+        step += 1
+        ui.blank()
+        # We close stdout/Rich console gracefully BEFORE swapping process
+        # images. After os.execvp our Python process is gone — the
+        # installer's uninstall command takes over and can safely
+        # unlink the binary that was holding our PID.
+        ui.console().print(
+            f"[{ui.theme().muted}]→ [{step}/{total_steps}] swapping into:[/]  "
+            f"[bold]{' '.join(tool_cmd)}[/]"
+        )
+        ui.blank()
+        try:
+            os.execvp(tool_cmd[0], tool_cmd)
+        except OSError as e:
+            # execvp only fails if the installer command is missing — fall
+            # back to subprocess so we at least leave a useful exit code.
+            log.error("execvp(%s) failed: %s", tool_cmd[0], e)
+            ui.err(f"{tool_cmd[0]} not on PATH", str(e))
+            ui.hint("run manually:  " + " ".join(tool_cmd))
+            raise typer.Exit(1) from e
+
+    # We only reach here when --keep-tool was set.
+    ui.blank()
+    ui.ok("uninstall complete")
+    ui.hint("the `superton` binary is still on your PATH (--keep-tool was passed)")
 
 
 import_app = typer.Typer(help="Import conversations from other AI tools.")

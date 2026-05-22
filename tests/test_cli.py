@@ -96,10 +96,48 @@ def test_uninstall_removes_data_when_confirmed(env: Path, monkeypatch):
     (env / "palace").mkdir(parents=True)
     (env / "config.toml").write_text('theme = "mono"\n', encoding="utf-8")
 
-    result = CliRunner().invoke(app, ["uninstall", "--yes", "--keep-models"])
+    # --keep-tool prevents the test runner from being execvp'd into oblivion.
+    result = CliRunner().invoke(app, ["uninstall", "--yes", "--keep-models", "--keep-tool"])
 
     assert result.exit_code == 0
     assert not env.exists()
+
+
+def test_uninstall_default_swaps_into_tool_uninstall(env: Path, monkeypatch):
+    """With no --keep-tool, uninstall must call os.execvp so the binary
+    can be safely unlinked. The CliRunner can't actually execvp, but we
+    can patch it to verify the call site exists and aims at the right cmd."""
+    monkeypatch.setattr("superton.cli.shutil.which", lambda name: "/usr/bin/" + name)
+
+    captured: list[tuple[str, list[str]]] = []
+
+    def _fake_execvp(file: str, args: list[str]) -> None:
+        captured.append((file, args))
+        # execvp normally never returns; raise SystemExit to mimic the
+        # process being replaced so the surrounding code stops cleanly.
+        raise SystemExit(0)
+
+    monkeypatch.setattr("superton.cli.os.execvp", _fake_execvp)
+    result = CliRunner().invoke(app, ["uninstall", "--yes", "--keep-data", "--keep-models"])
+
+    assert captured, "uninstall should have called os.execvp for the binary"
+    assert captured[0][1][0] in {"uv", "pipx", result.stdout and "python" or "python"} or (
+        "pip" in " ".join(captured[0][1])
+    )
+
+
+def test_detect_install_method_returns_string(env: Path):
+    from superton.cli import _detect_install_method
+
+    method = _detect_install_method()
+    assert method in {"uv", "pipx", "pip"}
+
+
+def test_tool_uninstall_command_contains_superton(env: Path):
+    from superton.cli import _tool_uninstall_command
+
+    cmd = _tool_uninstall_command()
+    assert "superton" in " ".join(cmd)
 
 
 def test_uninstall_model_names_include_dependencies_by_default(env: Path):
