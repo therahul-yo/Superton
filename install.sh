@@ -27,8 +27,19 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "superton install: installing SuperTon"
-uv tool install "$REPO_URL" --force
+# Install with the [tui] extra by default so `superton tui` works out of
+# the box without a follow-up reinstall. Set SUPERTON_NO_TUI=1 to skip
+# the extra (saves ~20 MB of Textual + linkify deps).
+if [ "${SUPERTON_NO_TUI:-0}" = "1" ]; then
+  echo "superton install: installing SuperTon (no TUI extra)"
+  uv tool install "$REPO_URL" --force
+else
+  echo "superton install: installing SuperTon with TUI extra"
+  uv tool install --with "textual>=0.60.0" "$REPO_URL" --force
+fi
 
 echo "superton install: done"
 echo "run: superton init"
+echo
+echo "tip: 'superton'      starts the classic interactive shell"
+echo "     'superton tui'   launches the full-screen Textual interface"

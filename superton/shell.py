@@ -195,23 +195,43 @@ def _prompt(status: _Status | None = None) -> str:
         primary_pt = ui.pt_color(t.primary)
         secondary_pt = ui.pt_color(t.secondary)
         muted_pt = ui.pt_color(t.muted)
+        neutral_pt = ui.pt_color(t.neutral) or "fg:#FFFFFF"
+        primary_bg_pt = ui.pt_bg(t.primary)
         if "bold" not in primary_pt.split():
             primary_pt = f"bold {primary_pt}".strip()
+
+        # High-contrast selection style: theme-primary background with a
+        # near-black foreground so the highlighted completion stays legible
+        # on every theme. `reverse <fg>` looks fine in isolation but on
+        # several terminals it collapses the foreground into the terminal's
+        # own background colour, which on dark profiles is near-invisible.
+        # See https://github.com/prompt-toolkit/python-prompt-toolkit/issues/...
+        current_fg = "fg:#0a0a0a"
+        current_meta_fg = "fg:#2b2b2b"
+
         pt_style = Style.from_dict({
             "cmd": primary_pt,
             "arg": secondary_pt,
-            "text": "",
+            "text": neutral_pt,
             "glyph": primary_pt,
             "bottom-toolbar": f"{muted_pt} noreverse",
             "bottom-toolbar.text": muted_pt,
             # Slash-command completion menu: leading slash in primary, the
-            # rest of the command in the muted accent; meta column dim.
+            # rest of the command in the secondary accent; description (meta)
+            # column dim. When a row is the current selection we paint the
+            # whole row primary-bg + near-black-fg so it reads cleanly across
+            # every theme (no `reverse` fragility).
             "completion.slash": primary_pt,
             "completion.cmd": secondary_pt,
             "completion-menu.completion": muted_pt,
-            "completion-menu.completion.current": f"reverse {primary_pt}",
+            "completion-menu.completion.current": f"{primary_bg_pt} {current_fg} bold",
+            # Nested classes inside the current row inherit the bg but need
+            # their own fg overridden so the inner colours don't fight the
+            # selection background.
+            "completion-menu.completion.current completion.slash": f"{current_fg} bold",
+            "completion-menu.completion.current completion.cmd": current_fg,
             "completion-menu.meta.completion": muted_pt,
-            "completion-menu.meta.completion.current": f"reverse {muted_pt}",
+            "completion-menu.meta.completion.current": f"{primary_bg_pt} {current_meta_fg}",
         })
 
         # Persistent command history across shell sessions.

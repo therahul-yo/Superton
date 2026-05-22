@@ -156,10 +156,18 @@ _console = Console()
 _err_console = Console(stderr=True)
 _current: Theme = THEMES[_resolve_theme_name()]
 
-INSTALL_YELLOW = "#FFD93D"
+# Install-flow palette — intentionally bicolor (orange + red) so the
+# staged init reads as a single fire-toned vocabulary instead of the
+# earlier yellow/green/orange/red mix that fought with the active theme.
+# Orange carries progress + positive outcomes (✓, →, fits, headers).
+# Red carries any negative or attention-grabbing signal (!, ✗, tight RAM).
 INSTALL_ORANGE = "#FFB02E"
-INSTALL_GREEN = "#42D66B"
 INSTALL_RED = "#F0471F"
+
+# Legacy aliases kept for one release so external callers (and the older
+# tests on disk) don't break instantly. Both fold into the new palette.
+INSTALL_YELLOW = INSTALL_ORANGE
+INSTALL_GREEN = INSTALL_ORANGE
 
 
 def console() -> Console:
@@ -602,6 +610,51 @@ def pt_color(rich_style: str) -> str:
     return " ".join(out)
 
 
+def pt_bg(rich_style: str) -> str:
+    """Same as `pt_color` but emits `bg:` prefixes and drops modifiers.
+
+    Useful when computing a highlight pair for prompt_toolkit completion
+    menus: `bg:primary fg:dark` reads cleanly across every theme without
+    relying on `reverse`, which on some terminals collapses the foreground
+    into a near-invisible terminal-bg colour.
+    """
+    if not rich_style:
+        return ""
+    out: list[str] = []
+    for part in rich_style.strip().split():
+        lower = part.lower()
+        if lower in _PT_MODIFIERS:
+            # Modifiers (bold / italic / ...) don't apply to background.
+            continue
+        color = _GREY_MAP.get(lower, part)
+        if color.startswith("bg:"):
+            out.append(color)
+        elif color.startswith("fg:"):
+            out.append("bg:" + color[3:])
+        else:
+            out.append(f"bg:{color}")
+    return " ".join(out)
+
+
+def pt_raw_color(rich_style: str) -> str:
+    """Return just the colour value (no `fg:` / `bg:` / modifier prefixes).
+
+    Used when the caller needs to compose `fg:` + a different colour with
+    `bg:` themselves — e.g. dark text on the theme's primary background.
+    """
+    if not rich_style:
+        return ""
+    for part in rich_style.strip().split():
+        lower = part.lower()
+        if lower in _PT_MODIFIERS:
+            continue
+        color = _GREY_MAP.get(lower, part)
+        if color.startswith(("fg:", "bg:")):
+            return color[3:]
+        return color
+    return ""
+
+
 # --- git project awareness ----------------------------------------------------
 
 def git_info(start: Path | None = None) -> tuple[str | None, str | None]:
@@ -842,11 +895,11 @@ def stage(title: str, *, step: int | None = None, total: int | None = None):
     """
     if step is not None and total is not None:
         header = (
-            f"[{INSTALL_YELLOW}]→[/] "
+            f"[{INSTALL_ORANGE}]→[/] "
             f"[{_current.muted}][{step}/{total}][/] {title}"
         )
     else:
-        header = f"[{INSTALL_YELLOW}]→[/] {title}"
+        header = f"[{INSTALL_ORANGE}]→[/] {title}"
     _console.print(header)
     try:
         yield
@@ -856,8 +909,12 @@ def stage(title: str, *, step: int | None = None, total: int | None = None):
 
 
 def stage_ok(msg: str) -> None:
-    """Indented success line paired with the preceding `stage()`."""
-    _console.print(f"  [{INSTALL_GREEN}]✓[/] {msg}")
+    """Indented success line paired with the preceding `stage()`.
+
+    The ✓ glyph carries the positive signal; colour stays in the orange
+    family so the install flow keeps its bicolor (orange + red) palette.
+    """
+    _console.print(f"  [{INSTALL_ORANGE}]✓[/] {msg}")
 
 
 def stage_warn(msg: str, hint: str | None = None) -> None:
@@ -865,7 +922,8 @@ def stage_warn(msg: str, hint: str | None = None) -> None:
     same dim style as `ui.hint()` so the user always sees a recovery
     suggestion right next to the problem.
     """
-    _console.print(f"  [{INSTALL_ORANGE}]![/] {msg}")
+    # Warning glyph in red so it pops against the orange-only positive signal.
+    _console.print(f"  [{INSTALL_RED}]![/] {msg}")
     if hint:
         _console.print(f"    [{_current.muted}]↳ {hint}[/]")
 
@@ -894,14 +952,16 @@ def ram_bar(used_gb: float | None, recommended_gb: float, *, width: int = 6) -> 
     filled = max(1, int(ratio * width))
     empty = width - filled
     fit = used_gb >= recommended_gb
-    bar_color = INSTALL_GREEN if fit else INSTALL_ORANGE
+    # Orange when this machine fits the profile, red when it's underspec.
+    bar_color = INSTALL_ORANGE if fit else INSTALL_RED
     out.append("■" * filled, style=bar_color)
     out.append("□" * empty, style=_current.muted)
     out.append(
         f"  {used_gb:.0f} / {recommended_gb:.0f} GB  ",
         style=_current.neutral,
     )
-    out.append_text(pill("fits" if fit else "tight", kind="success" if fit else "warning"))
+    # Pills carry the same orange/red signal as the bar.
+    out.append_text(pill("fits" if fit else "tight", kind="success" if fit else "error"))
     return out
 
 
@@ -919,8 +979,8 @@ def preflight_card(
     than a wall of prompts.
     """
     icon_styles = {
-        "✓": INSTALL_GREEN,
-        "→": INSTALL_YELLOW,
+        "✓": INSTALL_ORANGE,
+        "→": INSTALL_ORANGE,
         "?": _current.muted,
         "-": _current.muted,
     }
@@ -937,7 +997,7 @@ def preflight_card(
     _console.print(
         Panel(
             body,
-            title=Text(f"▸ {title}", style=f"bold {INSTALL_YELLOW}"),
+            title=Text(f"▸ {title}", style=f"bold {INSTALL_ORANGE}"),
             title_align="left",
             border_style=_current.rule,
             padding=(0, 1),
@@ -956,7 +1016,7 @@ def ready_card(cfg, stats: dict) -> None:
     not a help screen.
     """
     body = Text()
-    body.append("SuperTon is ready.\n", style=f"bold {INSTALL_YELLOW}")
+    body.append("SuperTon is ready.\n", style=f"bold {INSTALL_ORANGE}")
     body.append("\n")
     body.append_text(status_pills(cfg, stats))
     body.append("\n\n")
@@ -984,9 +1044,9 @@ def ready_card(cfg, stats: dict) -> None:
     _console.print(
         Panel(
             body,
-            title=Text("ready", style=f"bold {INSTALL_YELLOW}"),
+            title=Text("ready", style=f"bold {INSTALL_ORANGE}"),
             title_align="left",
-            border_style=INSTALL_YELLOW,
+            border_style=INSTALL_ORANGE,
             padding=(1, 2),
             expand=False,
             box=box.ROUNDED,
@@ -1030,7 +1090,7 @@ def profile_card(
     _console.print(
         Panel(
             body,
-            border_style=INSTALL_YELLOW if selected else _current.rule,
+            border_style=INSTALL_ORANGE if selected else _current.rule,
             padding=(0, 1),
             expand=False,
             box=box.ROUNDED,
@@ -1141,6 +1201,47 @@ def welcome_tour(cfg, stats: dict) -> None:
     )
     _console.print()
     next_steps_card(cfg)
+
+
+def farewell_card(removed: list[tuple[str, str]], manual_step: str | None = None) -> None:
+    """Closing card for `superton uninstall`.
+
+    `removed` is `[(label, detail), ...]` describing each artifact that
+    was deleted (palace dir, ollama tags, etc.). `manual_step` is the
+    one thing the user still has to do themselves — usually the
+    `uv tool uninstall superton` / `pip uninstall superton` line since
+    a running process can't unlink its own executable.
+    """
+    body = Text()
+    body.append("SuperTon uninstalled.\n", style=f"bold {_current.primary}")
+    body.append("\n")
+    if removed:
+        body.append("Removed:\n", style=_current.muted)
+        for label, detail in removed:
+            body.append("  - ", style=f"dim {_current.error}")
+            body.append(f"{label:24}", style="bold")
+            body.append(detail, style=_current.muted)
+            body.append("\n")
+    else:
+        body.append("Nothing to remove — system was already clean.\n", style=_current.muted)
+    if manual_step:
+        body.append("\n")
+        body.append("One step left (manual):\n", style=_current.muted)
+        body.append(f"  {manual_step}\n", style="bold")
+    body.append("\n")
+    body.append("Thanks for using SuperTon. ❍", style=_current.muted)
+
+    _console.print(
+        Panel(
+            body,
+            title=Text("uninstalled", style=f"bold {_current.primary}"),
+            title_align="left",
+            border_style=_current.primary,
+            padding=(1, 2),
+            expand=False,
+            box=box.ROUNDED,
+        )
+    )
 
 
 def stream_answer(token_iter, label: str = "Miniton") -> str:

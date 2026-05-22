@@ -37,6 +37,16 @@ def test_ram_bar_fits_shows_filled_segments():
 def test_ram_bar_tight_marks_warning():
     out = ui.ram_bar(used_gb=4.0, recommended_gb=16.0, width=4)
     assert "tight" in out.plain
+    # Bicolor install palette: tight RAM uses red (was orange in the
+    # earlier yellow/green palette).
+    assert out.spans[0].style == ui.INSTALL_RED
+
+
+def test_ram_bar_fits_uses_orange():
+    """Fits RAM should render in INSTALL_ORANGE; install flow has no
+    standalone green any more."""
+    out = ui.ram_bar(used_gb=16.0, recommended_gb=8.0, width=4)
+    assert "fits" in out.plain
     assert out.spans[0].style == ui.INSTALL_ORANGE
 
 
