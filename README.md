@@ -14,27 +14,6 @@ PDFs, and conversations from other AI tools. It indexes everything verbatim
 into a **palace of memories**, then your tiny custom local model (`Miniton`)
 answers your questions grounded in what you've fed it.
 
-## 60-second start
-
-```bash
-curl -LsSf https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh
-superton init
-superton add ~/notes
-superton
-```
-
-Want to inspect the installer first?
-
-```bash
-curl -LsSf https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh -s -- --dry-run
-```
-
-What you get:
-
-- Local memory search over your own notes, docs, PDFs, and AI transcripts
-- Grounded answers with citations back to the drawers SuperTon used
-- No API key or cloud required by default; Ollama runs the model locally
-
 - 🕳 **Black hole memory** — drawers go in, nothing comes out warped, nothing is forgotten
 - 🧠 **Tiny local model** — Miniton, customizable via `Modelfile`
 - 🔒 **100% local** — no API keys, no cloud, no telemetry
