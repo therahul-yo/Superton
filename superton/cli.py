@@ -837,15 +837,22 @@ def ask(
     """Ask Miniton a question. Answer is grounded in palace drawers."""
     cfg = _cfg()
     mem = Memory(cfg)
+    # Empty-palace check before retrieval: skip the search spinner entirely
+    # on a brand-new install so the user lands on the recovery hint without
+    # waiting for an inevitably empty FTS + semantic round-trip.
+    if mem.stats()["drawers"] == 0:
+        ui.warn("your palace is empty")
+        ui.hint(
+            "ingest something first: [bold]superton add ~/notes[/bold] "
+            "or try [bold]superton demo[/bold]"
+        )
+        mem.close()
+        raise typer.Exit(0)
     with ui.spinner(
         "retrieving from palace",
         phases=["Searching palace", "Ranking drawers", "Re-scoring sources", "Composing context"],
     ):
         raw_hits = mem.search(question, limit=max(k, 8))
-    stats = mem.stats()
-    if stats["drawers"] == 0:
-        ui.warn("your palace is empty")
-        ui.hint("ingest something first: [bold]superton add ~/notes[/bold] or try [bold]superton demo[/bold]")
     from superton.shell import (
         ANSWER_CONTEXT_DRAWERS,
         ANSWER_DRAWER_CHARS,
