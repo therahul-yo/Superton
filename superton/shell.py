@@ -278,6 +278,15 @@ def _run_with_spinner(label: str, work):
 def _print_intro(cfg: Config, mem: Memory) -> None:
     s = mem.stats()
     ui.header(cfg, s)
+    if not cfg.first_repl_done:
+        ui.blank()
+        ui.panel(
+            "type / to see commands · type your question to chat · ^D to quit\n"
+            "press ? any time for the cheatsheet",
+            title="quick start",
+            anchor=True,
+        )
+        write_settings(cfg.home, first_repl_done="1")
     # The live bottom toolbar carries the routine hints (/help, /quit, palace
     # state). On a brand-new palace, the user lands here with zero context on
     # what to do next — show a short ordered tutorial instead of the one-line
@@ -565,7 +574,12 @@ def _answer(
     half: it takes the planned answer, streams tokens through
     `ui.stream_answer`, and prints citations.
     """
-    plan = chat.plan_answer(mem, question, history=history)
+    # Retrieval can take a few hundred ms on large palaces — show a
+    # spinner so the pause between Enter and the Miniton header doesn't
+    # read as a hang. The thinking spinner inside `ui.stream_answer`
+    # covers the gap from then until the first token.
+    with ui.spinner("searching palace…"):
+        plan = chat.plan_answer(mem, question, history=history)
     if plan.refusal is not None:
         _print_assistant(plan.refusal)
         return plan.refusal

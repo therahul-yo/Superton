@@ -237,6 +237,62 @@ def _confirm_pull(model_name: str, purpose: str, *, yes: bool) -> bool:
     return typer.confirm("Pull this model now?", default=True)
 
 
+DEMO_DRAWERS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "demo:notes/launch-plan.md",
+        "notes",
+        "demo",
+        "SuperTon demo launch plan: keep the first run short, ingest notes before asking, "
+        "and show citations so users can see which drawers grounded the answer.",
+    ),
+    (
+        "demo:projects/local-memory.md",
+        "projects",
+        "demo",
+        "Project summary: SuperTon is a local memory palace using SQLite for durable "
+        "drawers, FTS for exact search, and a semantic sidecar for natural-language recall.",
+    ),
+    (
+        "demo:transcripts/assistant-session.md",
+        "transcripts",
+        "demo",
+        "Assistant transcript: Rahul decided the product should stay local-first, avoid "
+        "telemetry, and make recovery hints visible whenever setup cannot complete a stage.",
+    ),
+)
+
+
+def _seed_demo(cfg: Config) -> tuple[int, int]:
+    """Seed a tiny demo palace. Returns (added, deduped)."""
+    mem = Memory(cfg)
+    added = 0
+    deduped = 0
+    for source, wing, room, text in DEMO_DRAWERS:
+        mem.add(text=text, source=source, wing=wing, room=room, metadata={"demo": True})
+        if mem.last_insert_was_new:
+            added += 1
+        else:
+            deduped += 1
+    mem.close()
+    return added, deduped
+
+
+def _offer_demo_seed(cfg: Config, *, yes: bool) -> None:
+    if yes:
+        return
+    mem = Memory(cfg)
+    stats = mem.stats()
+    mem.close()
+    if stats["drawers"] != 0:
+        return
+    ui.blank()
+    if not typer.confirm("Seed a 3-drawer demo palace so you can ask immediately?", default=False):
+        return
+    added, deduped = _seed_demo(cfg)
+    detail = f"{deduped} already present" if deduped else "try: superton ask \"what is SuperTon?\""
+    ui.ok(f"seeded {added} demo drawers", detail)
+
+
 def _ingest_into_memory(
     mem: Memory, path: Path, *, wing: str, room: str
 ) -> tuple[int, int, int, int]:
@@ -425,7 +481,7 @@ def init(
         ui.blank()
         ui.stage_skip("skipped ollama model build (--no-model)")
         ui.blank()
-        _finish_init(cfg)
+        _finish_init(cfg, offer_demo=not yes)
         return
 
     # ---------------------------------------------------------------------
@@ -449,7 +505,7 @@ def init(
                         "or rerun after installing ollama",
                     )
                 ui.blank()
-                _finish_init(cfg)
+                _finish_init(cfg, offer_demo=not yes)
                 return
             ui.stage_ok("ollama installed")
 
@@ -461,7 +517,7 @@ def init(
             )
             model.close()
             ui.blank()
-            _finish_init(cfg)
+            _finish_init(cfg, offer_demo=not yes)
             return
         ui.stage_ok(f"ollama running at {cfg.ollama_url}")
 
@@ -490,7 +546,7 @@ def init(
                 )
                 model.close()
                 ui.blank()
-                _finish_init(cfg)
+                _finish_init(cfg, offer_demo=not yes)
                 return
             subprocess.run(["ollama", "pull", cfg.base_model], check=False)
             if not model.has_model(cfg.base_model):
@@ -525,7 +581,7 @@ def init(
                 )
                 model.close()
                 ui.blank()
-                _finish_init(cfg)
+                _finish_init(cfg, offer_demo=not yes)
                 return
             subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
             ui.stage_ok("downloaded")
@@ -579,16 +635,31 @@ def init(
     # ---------------------------------------------------------------------
     # Final — hero ready card
     # ---------------------------------------------------------------------
-    _finish_init(cfg)
+    _finish_init(cfg, offer_demo=not yes)
 
 
-def _finish_init(cfg: Config) -> None:
+def _finish_init(cfg: Config, *, offer_demo: bool = False) -> None:
     """Print the ready card with live palace stats."""
     mem = Memory(cfg)
     stats = mem.stats()
     mem.close()
     ui.blank()
     ui.ready_card(cfg, stats)
+    if offer_demo:
+        _offer_demo_seed(cfg, yes=False)
+
+
+@app.command()
+def demo() -> None:
+    """Seed a tiny local demo palace so new users can ask immediately."""
+    cfg = _cfg()
+    added, deduped = _seed_demo(cfg)
+    ui.section("demo")
+    detail = "stable demo drawers"
+    if deduped:
+        detail += f" · {deduped} already present"
+    ui.ok(f"seeded {added} drawer(s)", detail)
+    ui.hint('try: [bold]superton ask "what is SuperTon?"[/bold]')
 
 
 @app.command()
@@ -741,6 +812,10 @@ def ask(
         phases=["Searching palace", "Ranking drawers", "Re-scoring sources", "Composing context"],
     ):
         raw_hits = mem.search(question, limit=max(k, 8))
+    stats = mem.stats()
+    if stats["drawers"] == 0:
+        ui.warn("your palace is empty")
+        ui.hint("ingest something first: [bold]superton add ~/notes[/bold] or try [bold]superton demo[/bold]")
     from superton.shell import (
         ANSWER_CONTEXT_DRAWERS,
         ANSWER_DRAWER_CHARS,
@@ -1011,11 +1086,13 @@ def stats() -> None:
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    json_output: bool = typer.Option(False, "--json", help="emit machine-readable diagnostics"),
+) -> None:
     """Check local runtime, memory, and model setup."""
     from superton.doctor import render_doctor_report
 
-    render_doctor_report(_cfg())
+    render_doctor_report(_cfg(), json_output=json_output)
 
 
 @app.command()
