@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,53 @@ def test_doctor_runs(env: Path):
     result = CliRunner().invoke(app, ["doctor"])
     assert result.exit_code == 0
     assert "doctor" in result.stdout or "home" in result.stdout
+
+
+def test_doctor_json_runs(env: Path):
+    result = CliRunner().invoke(app, ["doctor", "--json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["home"] == str(env)
+    assert data["install_method"] in {"uv", "pipx", "pip"}
+    assert any(check["name"] == "palace" for check in data["checks"])
+
+
+def test_demo_seeds_stable_drawers(env: Path):
+    result = CliRunner().invoke(app, ["demo"])
+    assert result.exit_code == 0
+    assert "seeded 3" in result.stdout
+
+    second = CliRunner().invoke(app, ["demo"])
+    assert second.exit_code == 0
+    assert "already present" in second.stdout
+
+
+def test_init_no_model_ready_card_guides_empty_palace(env: Path):
+    result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
+    assert result.exit_code == 0
+    assert "superton add ~/notes" in result.stdout
+    assert "your palace is empty" in result.stdout
+
+
+def test_ask_empty_palace_suggests_demo(env: Path, monkeypatch):
+    class DownModel:
+        def __init__(self, cfg):
+            pass
+
+        def backend(self):
+            return None
+
+        def start_ollama(self, *, timeout: float = 5.0):
+            return False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("superton.cli.Model", DownModel)
+    result = CliRunner().invoke(app, ["ask", "hello"])
+    assert result.exit_code == 0
+    assert "your palace is empty" in result.stdout
+    assert "superton demo" in result.stdout
 
 
 def test_uninstall_removes_data_when_confirmed(env: Path, monkeypatch):

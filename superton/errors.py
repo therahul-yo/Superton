@@ -8,6 +8,7 @@ failure surfaces in the CLI, the shell, or the MCP server.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 
 from superton.model import HuggingFaceError, ModelError, OllamaError
@@ -42,6 +43,11 @@ class _Hint:
 def hint_for(exc: BaseException) -> _Hint:
     """Map a known exception to (summary, recovery-hint)."""
     if isinstance(exc, OllamaError):
+        if shutil.which("ollama") is None:
+            return _Hint(
+                summary="Ollama is not installed",
+                hint="install it from [bold]https://ollama.com/download[/bold] or run [bold]superton init[/bold]",
+            )
         return _Hint(
             summary="cannot reach Ollama",
             hint="start it with [bold]ollama serve[/bold] or run [bold]superton init[/bold]",
@@ -52,9 +58,14 @@ def hint_for(exc: BaseException) -> _Hint:
             hint="check [bold]HF_TOKEN[/bold] and your network, or switch to Ollama",
         )
     if isinstance(exc, ModelError):
+        if shutil.which("ollama") is None:
+            return _Hint(
+                summary="no local model runner installed",
+                hint="run [bold]superton init[/bold] to install/configure Ollama, or set [bold]HF_TOKEN[/bold]",
+            )
         return _Hint(
             summary="no model backend available",
-            hint="run [bold]superton init[/bold] or set [bold]SUPERTON_MODEL_BACKEND[/bold]",
+            hint="run [bold]superton init[/bold] to pull/build the configured model, or set [bold]SUPERTON_MODEL_BACKEND[/bold]",
         )
     if isinstance(exc, IngestError):
         return _Hint(summary=str(exc) or "could not ingest file", hint="see [bold]superton doctor[/bold]")

@@ -119,6 +119,7 @@ class Config:
     semantic_collection: str = "superton_drawers"
     offline: bool = True
     theme: str = "nebula"
+    first_repl_done: bool = False
 
     @classmethod
     def load(cls) -> Config:
@@ -181,6 +182,7 @@ class Config:
                 settings.get("semantic_collection", "superton_drawers"),
             ),
             theme=theme,
+            first_repl_done=settings.get("first_repl_done", "").lower() in {"1", "true", "yes"},
         )
 
     @property

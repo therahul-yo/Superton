@@ -15,12 +15,12 @@
 | Item | Problem | Sketch | Effort |
 |---|---|---|---|
 | **Complete uninstall** ✅ | `superton uninstall` left the `~/.local/bin/superton` shim behind. | `--tool` default flipped to True; `os.execvp` so the binary can replace itself. Preflight card + per-stage progress. | 1 PR (done) |
-| **First-run sanity check** | New users run `superton init` then `superton ask "hi"` before ingesting anything → confused refusal. | Show a one-line empty-palace hint after init's ready card: "your palace is empty. Try `superton add ~/notes` to feed it." | 30 min |
+| **First-run sanity check** ✅ | New users run `superton init` then `superton ask "hi"` before ingesting anything → confused refusal. | Ready card is now a 2-step ladder and empty-palace asks point to `superton add ~/notes` or `superton demo`. | 1 PR (done) |
 | **Better Ollama-not-running error** | `superton ask "..."` with Ollama installed but daemon not running just shows `cannot reach Ollama`. | The `errors.hint_for` mapping already exists — chain a `pgrep ollama` probe so the hint distinguishes "not installed" vs "installed but not started". | 1 hour |
 | **`superton doctor` shows install method** | When users hit issues, support starts with "how did you install it?" → friction. | Add an "install method" row showing uv / pipx / pip + the active path so users can paste their doctor output and we know everything. | 30 min |
 | **TUI install drift** ✅ | Vanilla `install.sh` skipped the `[tui]` extra → `superton tui` failed on first try. | install.sh now passes `--with textual` by default. `SUPERTON_NO_TUI=1` opts out. | 1 PR (done) |
 | **Slash-menu legibility** ✅ | The highlighted completion row was near-invisible on dark themes (used prompt_toolkit's flaky `reverse`). | Explicit `bg:<theme.primary> fg:#0a0a0a bold` + nested overrides. New `pt_bg`/`pt_raw_color` helpers in `ui.py`. | 1 PR (done) |
-| **Install palette consolidation** ✅ | Init flow used four colors (yellow/green/orange/red) that fought with the theme. | Bicolor orange + red only. | 1 PR (done) |
+| **Install palette consolidation** ✅ | Init flow used four colors (yellow/green/orange/red) that fought with the theme. | Tri-color orange/yellow/red: progress, recoverable warning, hard failure. | 1 PR (done) |
 
 ## Soon (next month)
 
@@ -28,7 +28,7 @@
 
 | Item | Sketch | Effort |
 |---|---|---|
-| **Demo mode** | `superton demo` populates the palace with 3–4 sample drawers (a fake resume, a Claude transcript, a note) so new users can `ask` immediately. Wipeable via `superton uninstall --keep-tool`. | 1 day |
+| **Demo mode** ✅ | `superton demo` populates the palace with 3 stable sample drawers so new users can `ask` immediately. Offered after interactive init when the palace is empty. | 1 PR (done) |
 | **Smart Ollama discovery** | Look in `/Applications/Ollama.app` (macOS), `~/snap/ollama`, `/opt/homebrew/bin/ollama` in addition to PATH. Display in doctor as "found at <path>". | 2 hours |
 | **Hardware fit check** | At init, refuse `neutron` profile when RAM < 14 GB (today we warn). Allow `--force`. Prevent failed model pulls. | 2 hours |
 | **First-run welcome animation** | On the very first `superton` invocation after init, show a 1-second wordmark fade + a "type / for commands" hint that auto-dismisses. | 4 hours |
@@ -67,7 +67,7 @@
 |---|---|---|
 | **`SUPERTON_LOG=debug` discoverability** | When init's `_finish_init` runs and any stage warned, show a dim "run `SUPERTON_LOG=info` next time for more detail" line. | 1 hour |
 | **Crash report card** | On unhandled exception in the shell or TUI, print a 4-line card with: error, hint, recovery cmd, and `--debug` flag suggestion. Already partially exists via `errors.render`; standardize. | 4 hours |
-| **`superton doctor --json`** | Machine-readable doctor output for bug reports. | 2 hours |
+| **`superton doctor --json`** ✅ | Machine-readable doctor output for bug reports, including install method and executable path without exposing secrets. | 1 PR (done) |
 
 ## Later (next quarter)
 

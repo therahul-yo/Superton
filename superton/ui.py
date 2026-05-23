@@ -18,6 +18,7 @@ Themes are chosen by, in order:
 from __future__ import annotations
 
 import os
+import queue
 import threading
 import time
 from collections.abc import Iterable
@@ -39,6 +40,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
+from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
@@ -156,17 +158,17 @@ _console = Console()
 _err_console = Console(stderr=True)
 _current: Theme = THEMES[_resolve_theme_name()]
 
-# Install-flow palette — intentionally bicolor (orange + red) so the
-# staged init reads as a single fire-toned vocabulary instead of the
-# earlier yellow/green/orange/red mix that fought with the active theme.
-# Orange carries progress + positive outcomes (✓, →, fits, headers).
-# Red carries any negative or attention-grabbing signal (!, ✗, tight RAM).
+# Install-flow palette — tri-color (orange / yellow / red), a single
+# fire-toned vocabulary that stays readable against every active theme.
+#   ORANGE → forward motion + positive outcomes: ✓, →, fits, headers, ready
+#   YELLOW → attention without alarm: ! warnings, tight RAM, hints, "?" rows
+#   RED    → hard failure: ✗, stage failed, unrecoverable error
 INSTALL_ORANGE = "#FFB02E"
+INSTALL_YELLOW = "#FFD93D"
 INSTALL_RED = "#F0471F"
 
-# Legacy aliases kept for one release so external callers (and the older
-# tests on disk) don't break instantly. Both fold into the new palette.
-INSTALL_YELLOW = INSTALL_ORANGE
+# Legacy alias — green collapses into orange (positive signal). Kept so
+# external callers don't break instantly; remove after one release.
 INSTALL_GREEN = INSTALL_ORANGE
 
 
@@ -922,10 +924,11 @@ def stage_warn(msg: str, hint: str | None = None) -> None:
     same dim style as `ui.hint()` so the user always sees a recovery
     suggestion right next to the problem.
     """
-    # Warning glyph in red so it pops against the orange-only positive signal.
-    _console.print(f"  [{INSTALL_RED}]![/] {msg}")
+    # Yellow `!` separates "attention, but recoverable" from the red `✗`
+    # the stage() context manager uses for hard failure.
+    _console.print(f"  [{INSTALL_YELLOW}]![/] {msg}")
     if hint:
-        _console.print(f"    [{_current.muted}]↳ {hint}[/]")
+        _console.print(f"    [bold {INSTALL_YELLOW}]↳ {hint}[/]")
 
 
 def stage_skip(msg: str) -> None:
@@ -952,16 +955,18 @@ def ram_bar(used_gb: float | None, recommended_gb: float, *, width: int = 6) -> 
     filled = max(1, int(ratio * width))
     empty = width - filled
     fit = used_gb >= recommended_gb
-    # Orange when this machine fits the profile, red when it's underspec.
-    bar_color = INSTALL_ORANGE if fit else INSTALL_RED
+    # Orange when this machine fits the profile, yellow when it's underspec —
+    # underspec is a caution, not a hard failure (init still proceeds with a
+    # warning). Red is reserved for stages that actually crash.
+    bar_color = INSTALL_ORANGE if fit else INSTALL_YELLOW
     out.append("■" * filled, style=bar_color)
     out.append("□" * empty, style=_current.muted)
     out.append(
         f"  {used_gb:.0f} / {recommended_gb:.0f} GB  ",
         style=_current.neutral,
     )
-    # Pills carry the same orange/red signal as the bar.
-    out.append_text(pill("fits" if fit else "tight", kind="success" if fit else "error"))
+    # Pills track the bar: success-styled "fits" or warning-styled "tight".
+    out.append_text(pill("fits" if fit else "tight", kind="success" if fit else "warning"))
     return out
 
 
@@ -992,7 +997,9 @@ def preflight_card(
         marker = Text(status, style=icon_styles.get(status, _current.muted))
         table.add_row(marker, Text(name, style="bold"), Text(detail, style=_current.muted))
     body: Any = (
-        Group(Text(summary, style=_current.muted), Text(""), table) if summary else table
+        Group(Text(summary, style=_current.muted), Text("^C safe at any prompt", style=_current.muted), Text(""), table)
+        if summary
+        else Group(Text("^C safe at any prompt", style=_current.muted), Text(""), table)
     )
     _console.print(
         Panel(
@@ -1021,25 +1028,27 @@ def ready_card(cfg, stats: dict) -> None:
     body.append_text(status_pills(cfg, stats))
     body.append("\n\n")
     body.append("Start here:\n", style=_current.muted)
-    body.append("  superton add ~/notes              ", style="bold")
-    body.append("# ingest a directory\n", style=_current.muted)
-    body.append("  superton import claude-code        ", style="bold")
-    body.append("# pull past Claude Code sessions\n", style=_current.muted)
-    body.append('  superton ask "..."                 ', style="bold")
-    body.append("# grounded answer with citations\n", style=_current.muted)
-    body.append("  superton                           ", style="bold")
-    body.append("# interactive shell · type / for commands\n", style=_current.muted)
+    body.append("  1.  superton add ~/notes           ", style="bold")
+    body.append("# do this first\n", style=_current.muted)
+    body.append("  2.  superton                       ", style="bold")
+    body.append("# then chat\n", style=_current.muted)
+    body.append("      superton tui                   ", style="bold")
+    body.append("# full-screen option\n", style=_current.muted)
     body.append("\n")
-    body.append("Power tools:\n", style=_current.muted)
-    body.append("  superton tui                       ", style="bold")
-    body.append("# full-screen Textual TUI\n", style=_current.muted)
-    body.append("  superton mcp serve                 ", style="bold")
-    body.append("# expose palace to Claude / Cursor / Gemini\n", style=_current.muted)
-    body.append("  superton doctor                    ", style="bold")
-    body.append("# verify install + show recovery hints\n", style=_current.muted)
+    body.append("Also available: ", style=_current.muted)
+    body.append("superton demo", style="bold")
+    body.append(" · ", style=_current.muted)
+    body.append("superton import claude-code", style="bold")
+    body.append(" · ", style=_current.muted)
+    body.append("superton doctor", style="bold")
+    body.append(" · ", style=_current.muted)
+    body.append("superton mcp serve\n", style="bold")
     body.append("\n")
     body.append("palace at  ", style=_current.muted)
     body.append_text(Text(f"{cfg.palace_dir}", style=_current.muted, overflow="fold"))
+    if stats.get("drawers", 0) == 0:
+        body.append("\n")
+        body.append("your palace is empty — ingest something to ground answers.", style=f"italic {_current.muted}")
 
     _console.print(
         Panel(
@@ -1247,9 +1256,17 @@ def farewell_card(removed: list[tuple[str, str]], manual_step: str | None = None
 def stream_answer(token_iter, label: str = "Miniton") -> str:
     """Stream tokens live under a header. Returns the full answer string.
 
-    Uses rich.Live so tokens appear as they arrive. After the stream ends,
-    the cursor fades muted → rule → erased over ~150 ms so the answer
-    doesn't end on a hard cut. The final text is re-rendered as markdown.
+    Phases:
+      1. *thinking* — between the user hitting Enter and the first token,
+         a Rich `Spinner` ("dots") + dim "thinking…" line ticks in the
+         Live region so the gap reads as work-in-progress, not a hang.
+         Iterator consumption happens on a daemon thread so the spinner
+         keeps animating even while `model.generate()` blocks on the
+         first network round-trip.
+      2. *streaming* — once the first token arrives, the spinner is
+         dropped and tokens append live with a muted cursor (`▎`).
+      3. *retire* — cursor fades muted → rule → erased over ~150 ms so
+         the answer doesn't end on a hard cut.
 
     Exceptions from the token iterator propagate to the caller so that
     model errors (e.g. ModelError) can be handled upstream.
@@ -1258,31 +1275,74 @@ def stream_answer(token_iter, label: str = "Miniton") -> str:
     _console.print(f"[bold {_current.primary}]{label}[/]")
     buf: list[str] = []
     if _console.is_terminal:
+        # Pull tokens on a daemon thread so the Live region can keep
+        # ticking the thinking spinner during the (potentially multi-
+        # second) blocking wait for the model's first token.
+        tok_q: queue.Queue[str] = queue.Queue()
+        done = threading.Event()
+        err_box: list[BaseException] = []
+
+        def _pump() -> None:
+            try:
+                for tok in token_iter:
+                    tok_q.put(tok)
+            except BaseException as exc:  # noqa: BLE001 — propagated below
+                err_box.append(exc)
+            finally:
+                done.set()
+
+        pump = threading.Thread(target=_pump, daemon=True)
+        pump.start()
+
+        thinking = Spinner(
+            "dots",
+            text=Text("thinking…", style=_current.muted),
+            style=_current.primary,
+        )
+        first_token_seen = False
         with Live(
-            Text(""),
+            thinking,
             console=_console,
             refresh_per_second=30,
             transient=True,
         ) as live:
-            for tok in token_iter:
-                buf.append(tok)
+            while True:
+                try:
+                    tok = tok_q.get(timeout=0.08)
+                except queue.Empty:
+                    tok = None
+
+                if tok is not None:
+                    buf.append(tok)
+                    first_token_seen = True
+                    running = "".join(buf)
+                    t = Text(running)
+                    # Cursor stays muted so streamed content reads as the
+                    # focus of the screen, not a glowing tail.
+                    t.append("▎", style=_current.muted)
+                    live.update(t)
+                elif done.is_set() and tok_q.empty():
+                    break
+                # else: no token yet — Spinner keeps animating itself via
+                # Live's auto_refresh; nothing to do here.
+
+            if first_token_seen:
+                # Cursor retire: fade through dimmer styles, then drop the
+                # cursor entirely so the answer lands cleanly.
                 running = "".join(buf)
-                t = Text(running)
-                # Cursor stays muted so streamed content reads as the focus
-                # of the screen, not a glowing tail. Matches Claude Code.
-                t.append("▎", style=_current.muted)
-                live.update(t)
-            # Cursor retire: fade through dimmer styles, then drop entirely
-            # so the answer lands cleanly instead of clipping mid-glyph.
-            running = "".join(buf)
-            for style in (_current.muted, _current.rule):
-                faded = Text(running)
-                faded.append("▎", style=style)
-                live.update(faded)
-                time.sleep(0.06)
-            live.update(Text(running))
-            time.sleep(0.03)
+                for style in (_current.muted, _current.rule):
+                    faded = Text(running)
+                    faded.append("▎", style=style)
+                    live.update(faded)
+                    time.sleep(0.06)
+                live.update(Text(running))
+                time.sleep(0.03)
+
+        pump.join(timeout=0.1)
+        if err_box:
+            raise err_box[0]
     else:
+        # Non-terminal: no animation, just collect.
         for tok in token_iter:
             buf.append(tok)
     answer = "".join(buf).strip()
