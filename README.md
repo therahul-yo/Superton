@@ -20,7 +20,6 @@ answers your questions grounded in what you've fed it.
 - 📚 **Verbatim storage** — original text preserved; nothing summarized away
 - 🔗 **Multi-source** — import from Claude Code, ChatGPT, Cursor, Amp
 - 🎨 **Four themes** — nebula, mono, solar, frost — production-feel CLI
-- 🖥 **Full-screen TUI** — opt-in Textual app with palette, sidebar, modals (`superton tui`)
 - 🔌 **MCP-ready** — one command exposes your palace to Claude Code, Cursor, and Gemini CLI
 - 🛠 **Production-grade** — structured logging, typed errors with recovery hints, mypy-strict core, 187 tests
 - 🪶 **Lightweight** — runs comfortably on a laptop
@@ -113,8 +112,7 @@ The interesting choices, with the tradeoffs called out:
 Python 3.11+, [Typer](https://typer.tiangolo.com) (CLI),
 [Rich](https://rich.readthedocs.io) (output),
 [prompt-toolkit](https://python-prompt-toolkit.readthedocs.io)
-(interactive shell), [Textual](https://textual.textualize.io) (opt-in
-TUI), SQLite + FTS5 (durable store),
+(interactive shell), SQLite + FTS5 (durable store),
 [MemPalace](https://github.com/MemPalace/mempalace) + ChromaDB (semantic
 sidecar + MCP), [Ollama](https://ollama.com) (local model runtime),
 optional Hugging Face Inference fallback. Packaging with
@@ -198,10 +196,6 @@ superton model neutron
 superton theme solar
 superton welcome                 # anytime tour of what's installed
 
-# full-screen TUI (opt-in, becomes default in 0.4.0 — see docs/TUI_ARCHITECTURE.md)
-pip install 'superton[tui]'
-superton tui
-
 # power tools
 superton mcp serve               # expose the palace to Claude / Cursor / Gemini
 superton dedup --dry-run         # find near-duplicate drawers
@@ -282,14 +276,13 @@ Features:
 | `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
 | `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
 | `superton close` | Stop running SuperTon model runners |
-| `/stop` or `/quit` in the shell/TUI | Stop Miniton; `/quit` also exits |
+| `/stop` or `/quit` in the shell | Stop Miniton; `/quit` also exits |
 | `superton uninstall --yes --tool` | Remove local SuperTon data, Ollama models, and CLI install |
 | `superton import claude-code` | Import Claude Code session history |
 | `superton import chatgpt <export>` | Import ChatGPT `conversations.json` exports |
 | `superton import cursor` | Import readable Cursor thread/log files |
 | `superton import amp` | Import readable Amp thread/log files |
 | `superton tune` | Edit the Modelfile and rebuild Miniton |
-| `superton tui` | Launch the full-screen Textual TUI (requires `[tui]` extra) |
 | `superton` | Launch the interactive CLI shell |
 
 ## Uninstall
@@ -316,10 +309,9 @@ base and embedding models.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  surfaces:  CLI · prompt_toolkit shell · TUI    │
+│  surfaces:  CLI · prompt_toolkit shell          │
 ├─────────────────────────────────────────────────┤
 │  chat: plan_answer / stream_answer / refusal    │
-│        — shared by shell & TUI in lockstep      │
 ├─────────────────────────────────────────────────┤
 │  ui: themes (4) · spinner · cards · pills       │
 │  errors: typed exceptions + recovery hints      │
@@ -357,39 +349,6 @@ export SUPERTON_THEME=mono     # env override (useful in CI / screenshots)
 
 All semantic output (paths, drawer ids, commands, key bindings) is styled
 consistently per theme so switching looks intentional, not skinned.
-
-## TUI mode
-
-A full-screen Textual interface ships under the optional `[tui]` extra.
-The classic prompt-toolkit shell stays default for now; the TUI becomes
-the default interactive mode in 0.4.0 per the rollout in
-[`docs/TUI_ARCHITECTURE.md`](docs/TUI_ARCHITECTURE.md).
-
-```bash
-pip install 'superton[tui]'    # or: uv tool install 'superton[tui]'
-superton tui
-```
-
-Layout: status pills along the top (theme · model · backend · palace
-size), recent-sources sidebar with fuzzy filter on the left, scrollable
-chat transcript with streaming + citation chips on the right, mode
-breadcrumb and key hints in the footer.
-
-| key | action |
-|---|---|
-| `Ctrl+K` | command palette (fuzzy across slash commands + actions) |
-| `Ctrl+B` | toggle sidebar |
-| `Ctrl+L` | clear conversation |
-| `?` / `F1` | help modal |
-| `Esc` | close modal / return to chat |
-| `↑` / `↓` (input) | history navigation |
-| `/cmd args` | slash commands work the same as the classic shell |
-| `Ctrl+C` | quit |
-
-Themes propagate live: `/theme solar` repaints the running app without a
-restart. Same `superton.chat` orchestration backs both the TUI and the
-classic shell, so retrieval, refusal logic, and prompt construction stay
-in lockstep.
 
 ## MCP: plug SuperTon into your other AI tools
 
@@ -456,7 +415,7 @@ when something feels off:
 ```bash
 SUPERTON_LOG=info superton search "auth refactor"
 SUPERTON_LOG=debug SUPERTON_LOG_JSON=1 superton ask "..." 2>logs.jsonl
-SUPERTON_LOG_FILE=~/superton.log superton tui
+SUPERTON_LOG_FILE=~/superton.log superton
 ```
 
 Every known failure renders with a one-line recovery hint — start
@@ -507,12 +466,9 @@ superton doctor
 - **Phase 1.5** — production hardening: structured logging, typed errors
   with recovery hints, mypy-strict core, 187-test suite, Linux+macOS CI,
   UI polish pass (verb-cycling spinners, cards, pills, diff refresh) ✅
-- **Phase 1.6** — opt-in Textual TUI (`superton tui`) sharing the same
-  `superton.chat` orchestration as the classic shell ✅
 - **Phase 2** *(current)* — `timeline` / `entities` via MemPalace knowledge
   graph, batched ingest via `mempalace.miner`, OCR fallback for image PDFs,
-  file watcher, `export` / `import-palace` / `sync`, promote TUI to default
-  interactive mode (see [`docs/TUI_ARCHITECTURE.md`](docs/TUI_ARCHITECTURE.md))
+  file watcher, `export` / `import-palace` / `sync`
 - **Phase 3** — Gemini importer, browser extension, JSON output mode,
   packaging polish
 - **Phase 4** — `evolve` (LoRA fine-tune from your drawers), web UI
@@ -525,7 +481,6 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 Built on the shoulders of [Ollama](https://ollama.com),
 [MemPalace](https://github.com/MemPalace/mempalace),
-[Typer](https://typer.tiangolo.com), [Rich](https://rich.readthedocs.io),
-and [Textual](https://textual.textualize.io).
+[Typer](https://typer.tiangolo.com), and [Rich](https://rich.readthedocs.io).
 
 Development assistance from Claude Code and OpenAI Codex.

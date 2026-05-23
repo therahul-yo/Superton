@@ -1049,8 +1049,6 @@ def ready_card(cfg, stats: dict) -> None:
     body.append("# do this first\n", style=_current.muted)
     body.append("  2.  superton                       ", style="bold")
     body.append("# then chat\n", style=_current.muted)
-    body.append("      superton tui                   ", style="bold")
-    body.append("# full-screen option\n", style=_current.muted)
     body.append("\n")
     body.append("Also available: ", style=_current.muted)
     body.append("superton demo", style="bold")

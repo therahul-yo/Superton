@@ -1181,35 +1181,6 @@ def doctor(
 
 
 @app.command()
-def tui() -> None:
-    """Launch the Textual TUI (opt-in in 0.2.0).
-
-    Requires the optional `textual` dependency. The install.sh script
-    pulls it in by default; pre-existing installs need a one-line
-    refresh. See docs/TUI_ARCHITECTURE.md for the design + key bindings.
-    """
-    try:
-        from superton.tui.app import run_tui
-    except ImportError as e:
-        log.error("textual not installed: %s", e)
-        ui.err("textual is not installed", str(e))
-        ui.blank()
-        # Detect the installer flavour so the hint matches what the user
-        # actually used to install SuperTon — keeps the recovery one
-        # copy-paste away.
-        sys_exec = sys.executable
-        if "/uv/tools/" in sys_exec or "/uv-cache/" in sys_exec:
-            ui.hint("install with:  [bold]uv tool install --with textual superton --force[/]")
-        elif shutil.which("pipx"):
-            ui.hint("install with:  [bold]pipx inject superton textual[/]")
-        else:
-            ui.hint("install with:  [bold]pip install 'superton[tui]'[/]")
-        ui.hint("or rerun:      [bold]curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh[/]")
-        raise typer.Exit(1) from e
-    run_tui(_cfg())
-
-
-@app.command()
 def reindex() -> None:
     """Rebuild semantic index from the SQLite drawer store."""
     mem = Memory(_cfg())

@@ -1,13 +1,11 @@
-"""Pure chat orchestration logic — shared between the shell and the TUI.
+"""Pure chat orchestration logic for the shell.
 
 This module owns the *decision* part of "user asked a question": meta-question
 detection, retrieval, expansion, refusal, system-prompt construction. It does
 NOT touch the console — it streams text through generators and returns a
 typed result that the caller renders however it wants.
 
-The shell wraps this in `ui.stream_answer()`; the TUI feeds it to a
-`ChatTranscript` widget. Both call exactly the same logic so retrieval
-behaviour stays in lockstep.
+The shell wraps this in `ui.stream_answer()`.
 """
 
 from __future__ import annotations
@@ -180,7 +178,7 @@ def format_history(history: list[tuple[str, str]]) -> str:
     """Render recent turns for the prompt — compact, role-tagged.
 
     Currently unused by the prompt builder (we pass structured `chat_history`
-    instead) but kept as a public helper for the TUI's transcript widget.
+    instead) but kept as a public helper for transcript rendering.
     """
     if not history:
         return ""
@@ -311,9 +309,9 @@ def plan_answer(
 ) -> PlannedAnswer:
     """Run retrieval, refusal checks, and prompt assembly without calling the model.
 
-    Returns a `PlannedAnswer` the caller can feed into `stream_answer` (TUI)
-    or pass straight to `ui.stream_answer` (shell). Splitting plan/execute
-    lets the TUI render the citations before the model finishes streaming.
+    Returns a `PlannedAnswer` the caller passes straight to
+    `ui.stream_answer`. Splitting plan/execute lets the shell render
+    citations before the model finishes streaming.
     """
     search_query = contextualize_query(question, history)
     raw_hits = mem.search(search_query, limit=8) if should_retrieve(question) else []

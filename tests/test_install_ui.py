@@ -100,7 +100,6 @@ def test_ready_card_includes_palace_path_and_commands(cfg: Config, capsys):
     out = capsys.readouterr().out
     assert "ready" in out
     assert "superton add" in out
-    assert "superton tui" in out
     assert str(cfg.palace_dir) in out
 
 
