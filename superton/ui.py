@@ -158,18 +158,23 @@ _console = Console()
 _err_console = Console(stderr=True)
 _current: Theme = THEMES[_resolve_theme_name()]
 
-# Install-flow palette — tri-color (orange / yellow / red), a single
-# fire-toned vocabulary that stays readable against every active theme.
-#   ORANGE → forward motion + positive outcomes: ✓, →, fits, headers, ready
+# Install-flow palette — fire-toned signal vocabulary that stays readable
+# against every active theme:
+#   ORANGE → forward motion + structural success: ✓, →, headers, ready
 #   YELLOW → attention without alarm: ! warnings, tight RAM, hints, "?" rows
 #   RED    → hard failure: ✗, stage failed, unrecoverable error
+#   PURPLE → affirmative match (specifically the "fits" RAM-fit pill); the
+#            one cool tone in an otherwise warm palette so positive signal
+#            chips don't collide with the orange used for progress glyphs.
 INSTALL_ORANGE = "#FFB02E"
 INSTALL_YELLOW = "#FFD93D"
 INSTALL_RED = "#F0471F"
+INSTALL_PURPLE = "#B392E9"
 
-# Legacy alias — green collapses into orange (positive signal). Kept so
-# external callers don't break instantly; remove after one release.
-INSTALL_GREEN = INSTALL_ORANGE
+# Legacy alias — green collapses into purple (the affirmative chip). Kept
+# so external callers and the older tests on disk don't break instantly;
+# remove after one release.
+INSTALL_GREEN = INSTALL_PURPLE
 
 
 def console() -> Console:
@@ -383,17 +388,23 @@ def pill(label: str, *, kind: str = "neutral") -> Text:
     """Compact background-tinted badge for status displays.
 
     `kind` is one of: primary, secondary, success, warning, error, neutral.
-    Falls back to neutral if unknown. The background colors lean on the
-    active theme's `rule` value so pills sit naturally next to it.
+    Falls back to neutral if unknown.
+
+    Tuples are `(bg_color, text_color)`. Saturated/light accent colors
+    (primary, secondary, success, warning, info) all pair with `grey15`
+    text so the label reads as bold dark on a coloured chip. Dark accents
+    (error, the rule-grey used for `neutral`) pair with `neutral` text so
+    a light label pops off the chip. The earlier `(primary, neutral)`
+    layout gave white-on-yellow which was unreadable in most terminals.
     """
     palette = {
-        "primary": (_current.primary, _current.neutral),
-        "secondary": (_current.secondary, _current.neutral),
+        "primary": (_current.primary, "grey15"),
+        "secondary": (_current.secondary, "grey15"),
         "success": (_current.success, "grey15"),
         "warning": (_current.warning, "grey15"),
         "error": (_current.error, _current.neutral),
         "info": (_current.info, "grey15"),
-        "neutral": (_current.muted, _current.neutral),
+        "neutral": (_current.rule, _current.neutral),
     }
     fg, bg_hint = palette.get(kind, palette["neutral"])
     text = Text()
@@ -965,8 +976,14 @@ def ram_bar(used_gb: float | None, recommended_gb: float, *, width: int = 6) -> 
         f"  {used_gb:.0f} / {recommended_gb:.0f} GB  ",
         style=_current.neutral,
     )
-    # Pills track the bar: success-styled "fits" or warning-styled "tight".
-    out.append_text(pill("fits" if fit else "tight", kind="success" if fit else "warning"))
+    # Render the result pill inline in the install palette (purple for
+    # "fits", yellow for "tight") instead of routing through pill()'s
+    # theme-aware "success/warning" kinds — the install flow has its own
+    # four-color vocabulary and theme green would leak in otherwise.
+    if fit:
+        out.append(" fits ", style=f"bold grey15 on {INSTALL_PURPLE}")
+    else:
+        out.append(" tight ", style=f"bold grey15 on {INSTALL_YELLOW}")
     return out
 
 

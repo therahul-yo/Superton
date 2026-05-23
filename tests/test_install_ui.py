@@ -31,23 +31,34 @@ def test_ram_bar_fits_shows_filled_segments():
     plain = out.plain
     assert "■" in plain
     assert "fits" in plain
-    assert out.spans[0].style == ui.INSTALL_GREEN
 
 
 def test_ram_bar_tight_marks_warning():
     out = ui.ram_bar(used_gb=4.0, recommended_gb=16.0, width=4)
     assert "tight" in out.plain
-    # Tri-color install palette: tight RAM is a warning (yellow), not a
-    # hard failure (red is reserved for stages that actually crash).
+    # Tight RAM is a warning, not a hard failure — yellow, not red.
     assert out.spans[0].style == ui.INSTALL_YELLOW
 
 
 def test_ram_bar_fits_uses_orange():
-    """Fits RAM renders in INSTALL_ORANGE — the positive/forward signal in
-    the orange/yellow/red install palette."""
+    """Fits RAM renders the bar in INSTALL_ORANGE — the forward/progress
+    signal in the install palette."""
     out = ui.ram_bar(used_gb=16.0, recommended_gb=8.0, width=4)
     assert "fits" in out.plain
     assert out.spans[0].style == ui.INSTALL_ORANGE
+
+
+def test_ram_bar_fits_pill_uses_install_purple():
+    """The `fits` chip uses INSTALL_PURPLE (the affirmative tone) rather
+    than the active theme's success green, so the install flow keeps a
+    self-contained four-color vocabulary that doesn't shift with the
+    user's chosen theme."""
+    out = ui.ram_bar(used_gb=16.0, recommended_gb=8.0, width=4)
+    # Find the span containing the " fits " label — its style should name
+    # INSTALL_PURPLE as the background.
+    fits_spans = [s for s in out.spans if "fits" in out.plain[s.start:s.end]]
+    assert fits_spans, "no styled span carries the fits label"
+    assert ui.INSTALL_PURPLE in fits_spans[0].style
 
 
 def test_ram_bar_width_respected():
