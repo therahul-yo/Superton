@@ -10,8 +10,11 @@ from superton.shell import (
     _format_suggestions,
     _is_meta_question,
     _looks_memory_specific,
+    _path_from_input,
     _query_tokens,
+    _resolve_repl_path,
     _should_retrieve,
+    _unescape_shell_path,
     _wants_source_expansion,
 )
 
@@ -122,3 +125,63 @@ def test_format_suggestions_dedupes_by_source():
 
 def test_format_suggestions_empty():
     assert _format_suggestions([]) == ""
+
+
+# --- shell-style path unescape (drag-and-drop on macOS Terminal) ----------
+
+
+def test_unescape_shell_path_drops_backslash_spaces():
+    raw = r"/Users/rahul/Downloads/Lord\ of\ Mysteries\ -\ Book\ 1.epub"
+    assert _unescape_shell_path(raw) == "/Users/rahul/Downloads/Lord of Mysteries - Book 1.epub"
+
+
+def test_unescape_shell_path_handles_parens_and_amp():
+    raw = r"/tmp/foo\&bar/baz\(1\).pdf"
+    assert _unescape_shell_path(raw) == "/tmp/foo&bar/baz(1).pdf"
+
+
+def test_unescape_shell_path_idempotent_for_clean_paths():
+    raw = "/tmp/already-clean/file.txt"
+    assert _unescape_shell_path(raw) == raw
+
+
+def test_unescape_shell_path_preserves_trailing_backslash():
+    # Lone trailing backslash has no character to consume → keep it.
+    assert _unescape_shell_path("/tmp/odd\\") == "/tmp/odd\\"
+
+
+def test_resolve_repl_path_unescapes_and_strips_quotes(tmp_path):
+    target = tmp_path / "Lord of Mysteries - Book 1.epub"
+    target.write_text("epub")
+    # Mimic what drag-and-drop would produce:
+    raw = (
+        str(tmp_path)
+        + r"/Lord\ of\ Mysteries\ -\ Book\ 1.epub"
+    )
+    path = _resolve_repl_path(raw)
+    assert path == target
+    assert path.exists()
+
+
+def test_resolve_repl_path_strips_wrapping_single_quotes(tmp_path):
+    target = tmp_path / "hello world.txt"
+    target.write_text("x")
+    path = _resolve_repl_path(f"'{target}'")
+    assert path == target
+
+
+def test_path_from_input_detects_dropped_escaped_path(tmp_path):
+    # Bare input (no /add prefix) should still auto-detect a file that
+    # exists once you unescape the shell quoting.
+    target = tmp_path / "Screenshot 2026-05-18 at 9.09.46 PM.png"
+    target.write_bytes(b"png")
+    raw = str(target).replace(" ", "\\ ")
+    assert _path_from_input(raw) == target
+
+
+def test_path_from_input_returns_none_for_question_text():
+    assert _path_from_input("what is the capital of france") is None
+
+
+def test_path_from_input_returns_none_for_nonexistent_path():
+    assert _path_from_input("/definitely/not/a/real/path/anywhere.xyz") is None

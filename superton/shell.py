@@ -309,11 +309,43 @@ def _print_intro(cfg: Config, mem: Memory) -> None:
     ui.rule()
 
 
+def _unescape_shell_path(value: str) -> str:
+    """Strip shell-style backslash escapes from a raw REPL token.
+
+    macOS Terminal (and most *nix shells) backslash-escape spaces and
+    special chars when you drag-and-drop a file into the prompt. Inside
+    the REPL we read the line verbatim, so those escapes survive into
+    the string and `Path(r"foo\\ bar.txt").exists()` returns False —
+    there is no literal file with a backslash in its name.
+
+    Replace every `\\<c>` with `<c>` for any non-newline `c`. Idempotent
+    for paths that contain no backslashes.
+    """
+    if "\\" not in value:
+        return value
+    out: list[str] = []
+    i = 0
+    while i < len(value):
+        c = value[i]
+        if c == "\\" and i + 1 < len(value) and value[i + 1] != "\n":
+            out.append(value[i + 1])
+            i += 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _resolve_repl_path(value: str) -> Path:
+    """Normalize a raw REPL token into a Path (no existence check)."""
+    return Path(_unescape_shell_path(value.strip().strip("'\""))).expanduser()
+
+
 def _path_from_input(text: str) -> Path | None:
-    value = text.strip().strip("'\"")
+    value = text.strip()
     if not value or "\n" in value:
         return None
-    path = Path(value).expanduser()
+    path = _resolve_repl_path(value)
     return path if path.exists() else None
 
 
@@ -688,7 +720,7 @@ def run() -> None:
                 ui.blank()
                 continue
             if text.startswith("/refresh "):
-                path = Path(text.removeprefix("/refresh ").strip()).expanduser()
+                path = _resolve_repl_path(text.removeprefix("/refresh "))
                 if not path.exists():
                     ui.blank()
                     ui.warn(f"not found: {path}")
@@ -755,7 +787,7 @@ def run() -> None:
                 _print_search_hits(hits[:5])
                 continue
             if text.startswith("/add "):
-                path = Path(text.removeprefix("/add ").strip()).expanduser()
+                path = _resolve_repl_path(text.removeprefix("/add "))
                 if not path.exists():
                     ui.blank()
                     ui.warn(f"not found: {path}")
