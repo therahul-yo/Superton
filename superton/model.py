@@ -34,34 +34,53 @@ class Model:
         self.cfg = cfg
         self._client = httpx.Client(base_url=cfg.ollama_url, timeout=120.0)
         self._hf_client = httpx.Client(timeout=120.0)
+        self._tags_cache: tuple[float, list[dict]] | None = None
+        self._backend_cache: tuple[float, str | None] | None = None
+        self._ready_ttl = 4.0
+
+    def invalidate_cache(self) -> None:
+        self._tags_cache = None
+        self._backend_cache = None
 
     def ping(self) -> bool:
         if self.cfg.model_backend == "huggingface":
             return self.hf_ready()
-        try:
-            r = self._client.get("/api/tags")
-            return r.status_code == 200
-        except httpx.HTTPError:
-            return False
+        return self._tags() is not None
 
     def backend(self) -> str | None:
         """Return the usable generation backend, if any."""
+        now = time.time()
+        if self._backend_cache is not None and now - self._backend_cache[0] < self._ready_ttl:
+            return self._backend_cache[1]
         if self.cfg.model_backend == "ollama":
-            return "ollama" if self._ollama_ping() and self.has_model(self.cfg.model) else None
-        if self.cfg.model_backend == "huggingface":
-            return "huggingface" if self.hf_ready() else None
-        if self._ollama_ping() and self.has_model(self.cfg.model):
-            return "ollama"
-        if self.hf_ready():
-            return "huggingface"
-        return None
+            backend = "ollama" if self._ollama_ping() and self.has_model(self.cfg.model) else None
+        elif self.cfg.model_backend == "huggingface":
+            backend = "huggingface" if self.hf_ready() else None
+        elif self._ollama_ping() and self.has_model(self.cfg.model):
+            backend = "ollama"
+        elif self.hf_ready():
+            backend = "huggingface"
+        else:
+            backend = None
+        self._backend_cache = (now, backend)
+        return backend
 
-    def _ollama_ping(self) -> bool:
+    def _tags(self) -> list[dict] | None:
+        now = time.time()
+        if self._tags_cache is not None and now - self._tags_cache[0] < self._ready_ttl:
+            return self._tags_cache[1]
         try:
             r = self._client.get("/api/tags")
-            return r.status_code == 200
+            r.raise_for_status()
+            tags = r.json().get("models", [])
         except httpx.HTTPError:
-            return False
+            self._tags_cache = None
+            return None
+        self._tags_cache = (now, tags)
+        return tags
+
+    def _ollama_ping(self) -> bool:
+        return self._tags() is not None
 
     def ollama_ready(self) -> bool:
         return self._ollama_ping()
@@ -70,23 +89,22 @@ class Model:
         return bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN"))
 
     def has_model(self, name: str) -> bool:
-        try:
-            r = self._client.get("/api/tags")
-            r.raise_for_status()
-            tags = r.json().get("models", [])
-            return any(m.get("name", "").startswith(name) for m in tags)
-        except httpx.HTTPError:
+        tags = self._tags()
+        if tags is None:
             return False
+        return any(m.get("name", "").startswith(name) for m in tags)
 
     def build(self, modelfile: Path) -> bool:
         result = subprocess.run(
             ["ollama", "create", self.cfg.model, "-f", str(modelfile)],
             check=False,
         )
+        self.invalidate_cache()
         return result.returncode == 0
 
     def stop(self, model_name: str) -> bool:
         result = subprocess.run(["ollama", "stop", model_name], check=False)
+        self.invalidate_cache()
         return result.returncode == 0
 
     def start_ollama(self, *, timeout: float = 15.0) -> bool:
@@ -105,6 +123,7 @@ class Model:
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._ollama_ping():
+                self.invalidate_cache()
                 return True
             time.sleep(0.5)
         return False

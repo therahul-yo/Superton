@@ -303,6 +303,12 @@ class SupertonApp(App[None]):
                     header.backend_online = self.model.ping()
                 except Exception:  # noqa: BLE001
                     header.backend_online = False
+            footer = self.query_one("#footer", ModeFooter)
+            footer.set_context(
+                theme=ui.theme().name,
+                model=self.cfg.model_profile,
+                drawers=header.drawers,
+            )
             self._refresh_sidebar()
         except Exception as e:  # noqa: BLE001
             log.debug("state refresh skipped: %s", e)
@@ -350,12 +356,25 @@ class ModeFooter(Static):
 
     DEFAULT_CSS = ""
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.theme_name = "nebula"
+        self.model_profile = "proton"
+        self.drawers = 0
+
     def on_mount(self) -> None:
+        self._render_default()
+
+    def set_context(self, *, theme: str, model: str, drawers: int) -> None:
+        self.theme_name = theme
+        self.model_profile = model
+        self.drawers = drawers
         self._render_default()
 
     def _render_default(self) -> None:
         self.update(
-            "[bold]chatting[/]  ·  ? help  ·  Ctrl+K palette  ·  Ctrl+B sidebar  ·  /quit"
+            f"[bold]chatting[/]  ·  {self.theme_name}  ·  {self.model_profile}  ·  "
+            f"{self.drawers} drawers  ·  ? help  ·  Ctrl+K palette  ·  Ctrl+B sidebar"
         )
 
     def toast(self, msg: str, *, kind: str = "info") -> None:

@@ -20,6 +20,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -27,7 +28,7 @@ import typer
 from superton import __version__, errors, ui
 from superton.blackhole import static_frame
 from superton.config import MODEL_PROFILES, Config, detect_ram_gb, write_settings
-from superton.ingest import chunk_text, read_file, walk
+from superton.ingest import MAX_FILE_BYTES, chunk_text, file_too_large, read_file, walk
 from superton.logging import get_logger
 from superton.memory import Memory
 from superton.model import Model, ModelError, OllamaError
@@ -306,6 +307,14 @@ def _ingest_into_memory(
     with ui.progress("ingesting", total=len(files)) as advance:
         for f in files:
             rel = f.relative_to(path) if path.is_dir() else Path(f.name)
+            if file_too_large(f):
+                ui.warn(
+                    f"skip {rel}",
+                    f"file is over {MAX_FILE_BYTES // (1024 * 1024)} MB; split it or ingest a smaller export",
+                )
+                skipped += 1
+                advance(description=f"ingesting  [dim]skip {rel}[/]")
+                continue
             try:
                 text = read_file(f)
             except (ValueError, RuntimeError, UnicodeDecodeError) as e:
@@ -347,6 +356,7 @@ def _build_miniton(cfg: Config, *, yes: bool) -> bool:
             model.close()
             return False
         subprocess.run(["ollama", "pull", cfg.base_model], check=False)
+        model.invalidate_cache()
     modelfile = _project_modelfile()
     if modelfile is None:
         ui.err("Modelfile not found")
@@ -549,6 +559,7 @@ def init(
                 _finish_init(cfg, offer_demo=not yes)
                 return
             subprocess.run(["ollama", "pull", cfg.base_model], check=False)
+            model.invalidate_cache()
             if not model.has_model(cfg.base_model):
                 ui.stage_warn(
                     f"failed to pull {cfg.base_model}",
@@ -584,6 +595,7 @@ def init(
                 _finish_init(cfg, offer_demo=not yes)
                 return
             subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
+            model.invalidate_cache()
             ui.stage_ok("downloaded")
 
     # ---------------------------------------------------------------------
@@ -713,6 +725,24 @@ def add(
     if deduped:
         summary += f"  ·  {deduped} deduped"
     ui.ok(f"ingested {total_drawers} drawers", summary)
+
+
+@app.command()
+def note(
+    text: str = typer.Argument(..., help="note text to capture"),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="optional note tag"),
+) -> None:
+    """Capture a quick note without creating a file first."""
+    cfg = _cfg()
+    mem = Memory(cfg)
+    ts = time.time()
+    source = f"note:{time.strftime('%Y%m%d-%H%M%S', time.localtime(ts))}"
+    metadata = {"kind": "note"}
+    if tag:
+        metadata["tag"] = tag
+    drawer = mem.add(text=text, source=source, wing="notes", room=tag or "daily", metadata=metadata)
+    mem.close()
+    ui.ok(f"captured note {drawer.id[:8]}", source)
 
 
 @app.command()
@@ -930,6 +960,40 @@ def list_drawers(
     ui.print_table(table)
 
 
+def _print_recent_sources(*, days: int, limit: int) -> None:
+    """Render the 'recent' table. Shared by `recent` and `today` so the
+    Typer command bodies don't call each other (Option defaults are
+    OptionInfo sentinels at function-call time, which can confuse direct
+    Python invocation)."""
+    since = time.time() - max(days, 1) * 86400
+    mem = Memory(_cfg())
+    rows = mem.recent_sources(since=since, limit=limit)
+    mem.close()
+    ui.section("recent", f"last {days} day(s)")
+    table = ui.make_table("drawers", "latest", "source")
+    for row in rows:
+        latest = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(row["latest"])))
+        table.add_row(str(row["drawers"]), latest, row["source"])
+    if not rows:
+        table.add_row("-", "-", "no recent sources")
+    ui.print_table(table)
+
+
+@app.command()
+def recent(
+    days: int = typer.Option(7, "--days", "-d", help="look back this many days"),
+    limit: int = typer.Option(30, "--limit", "-n"),
+) -> None:
+    """List sources added recently."""
+    _print_recent_sources(days=days, limit=limit)
+
+
+@app.command()
+def today(limit: int = typer.Option(30, "--limit", "-n")) -> None:
+    """List sources added in the last 24 hours."""
+    _print_recent_sources(days=1, limit=limit)
+
+
 @app.command()
 def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
     """Semantic search across drawers with SQLite fallback."""
@@ -982,15 +1046,29 @@ def forget_source(source: str) -> None:
 
 
 @app.command()
-def sources(limit: int = typer.Option(30, "--limit", "-n")) -> None:
+def sources(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    health: bool = typer.Option(False, "--health", help="show source refresh/index health"),
+) -> None:
     """List indexed source files."""
     mem = Memory(_cfg())
-    rows = mem.sources(limit=limit)
+    rows = mem.source_health(limit=limit) if health else mem.sources(limit=limit)
     mem.close()
     ui.section("sources", f"{len(rows)} indexed")
-    table = ui.make_table("drawers", "source")
-    for row in rows:
-        table.add_row(str(row["drawers"]), row["source"])
+    if health:
+        table = ui.make_table("drawers", "indexed", "pending", "path", "source")
+        for row in rows:
+            table.add_row(
+                str(row["drawers"]),
+                str(row["indexed"] or 0),
+                str(row["pending"] or 0),
+                str(row["path_status"]),
+                row["source"],
+            )
+    else:
+        table = ui.make_table("drawers", "source")
+        for row in rows:
+            table.add_row(str(row["drawers"]), row["source"])
     ui.print_table(table)
 
 

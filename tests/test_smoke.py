@@ -143,6 +143,36 @@ def test_model_chat_payload_disables_thinking_and_caps_output(cfg: Config, monke
     model.close()
 
 
+def test_model_backend_uses_cached_tags(cfg: Config):
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"models": [{"name": "miniton:latest"}]}
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, path):
+            self.calls += 1
+            return Response()
+
+        def close(self):
+            pass
+
+    model = Model(cfg)
+    client = Client()
+    model._client = client
+    assert model.backend() == "ollama"
+    assert model.backend() == "ollama"
+    assert client.calls == 1
+    model.close()
+
+
 def test_shell_greeting_does_not_dump_memory(cfg: Config, capsys: pytest.CaptureFixture):
     from superton.shell import _answer
 
