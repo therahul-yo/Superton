@@ -38,6 +38,25 @@ def test_add_file_ingests_drawers(env: Path, tmp_path: Path):
     assert "ingested" in result.stdout
 
 
+def test_note_captures_drawer(env: Path):
+    result = CliRunner().invoke(app, ["note", "remember the token bucket decision", "--tag", "api"])
+    assert result.exit_code == 0
+    assert "captured note" in result.stdout
+
+    recent = CliRunner().invoke(app, ["recent"])
+    assert recent.exit_code == 0
+    assert "note:" in recent.stdout
+
+
+def test_sources_health_reports_virtual_note(env: Path):
+    result = CliRunner().invoke(app, ["note", "health check note"])
+    assert result.exit_code == 0
+
+    health = CliRunner().invoke(app, ["sources", "--health"])
+    assert health.exit_code == 0
+    assert "virtual" in health.stdout
+
+
 def test_add_missing_path_errors(env: Path):
     result = CliRunner().invoke(app, ["add", "/nonexistent/path/here"])
     assert result.exit_code == 1

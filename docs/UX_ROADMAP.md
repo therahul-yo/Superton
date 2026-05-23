@@ -37,9 +37,9 @@
 
 | Item | Sketch | Effort |
 |---|---|---|
-| **Quick capture** | `superton note "thought" --tag idea` for one-line notes without files. Stores as wing=notes, room=daily, source=`note:<timestamp>`. | 4 hours |
+| **Quick capture** ✅ | `superton note "thought" --tag idea` for one-line notes without files. Stores as wing=notes, room=daily/tag, source=`note:<timestamp>`. | 1 PR (done) |
 | **Project-aware retrieval** | `superton ask` detects current cwd; if it's inside a git repo whose name matches a wing, bias retrieval to that wing. | 1 day |
-| **`superton today` / `superton recent`** | List drawers added in the last 24h / 7d with a sparkline of activity. Mirrors the stats page. | 4 hours |
+| **`superton today` / `superton recent`** ✅ | List sources added in the last 24h / 7d, including drawer counts and latest timestamp. | 1 PR (done) |
 | **`superton tag`** | Add a tag to drawers from one source. Stored in metadata; surfaces in TUI sidebar as colored chips. | 1 day |
 
 ### Search & discovery
@@ -57,7 +57,7 @@
 | Item | Sketch | Effort |
 |---|---|---|
 | **Slash help redesign** | `/help` becomes a card grouped by category (ingest / search / config / system) with kbd-styled hints instead of a wall of text. | 4 hours |
-| **TUI: keyboard cheatsheet always visible** | F1 modal exists; also add a one-line "?: help" hint to the footer that's clickable. | 2 hours |
+| **TUI: keyboard cheatsheet always visible** ✅ | Footer now includes theme, model, drawer count, and the `?: help` hint. | 1 PR (done) |
 | **TUI: persistent layout state** | Remember sidebar width, focus, active theme across restarts via `~/.superton/tui_state.json`. | 1 day |
 | **TUI: drawer preview pane at wide widths** | At ≥ 140 cols, show selected drawer in a third pane instead of a modal. Already noted as an open question in the TUI design doc. | 1 day |
 
@@ -74,9 +74,9 @@
 ### Performance & scale
 
 - **Background reindexing** — `superton add` returns immediately; embedding happens in a daemon thread / asyncio worker. `superton stats` shows "indexing: 423/2107 drawers".
-- **Lazy semantic indexing** — Mark drawers as indexed/not in the SQLite schema. MCP search reads sqlite first, mempalace second.
+- **Lazy semantic indexing** ✅ — Drawers now track `semantic_status` / `indexed_at`; full background workers remain follow-up work.
 - **Disk compression** — Optional zstd compression for drawers older than 30 days. Saves disk for heavy users.
-- **Parallel ingest** — `superton add ~/big-folder` uses asyncio + a worker pool similar to the web puller's. Currently serial.
+- **Parallel ingest** — `superton add ~/big-folder` uses asyncio + a worker pool similar to the web puller's. Currently serial; this phase added large-file guards first.
 
 ### Privacy & security
 
@@ -95,7 +95,7 @@
 ### Multi-source intelligence
 
 - **Cross-source synthesis** — `ask --span "all my notes about graphql across last year"` explicitly tells the retriever to widen the source pool and prefer chronological synthesis over single-doc answers.
-- **Source health card** — `superton sources --health` shows which sources haven't been refreshed in N days, broken file paths, mismatched checksums.
+- **Source health card** ✅ — `superton sources --health` shows drawer count, semantic index status, and missing/virtual source path state.
 - **Auto-refresh watcher** — `superton watch ~/Documents` runs in the background and ingests new/changed files automatically (debounced).
 - **Importer plug-ins** — `superton import` becomes pluggable so third parties can write `superton-import-notion`, `superton-import-roam`, etc.
 

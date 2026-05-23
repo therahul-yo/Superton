@@ -113,8 +113,17 @@ class Memory:
                 wing TEXT NOT NULL DEFAULT 'default',
                 room TEXT NOT NULL DEFAULT 'default',
                 created_at REAL NOT NULL,
+                indexed_at REAL,
+                semantic_status TEXT NOT NULL DEFAULT 'pending',
                 metadata TEXT NOT NULL DEFAULT '{}'
             );
+            CREATE TABLE IF NOT EXISTS source_terms (
+                source TEXT NOT NULL,
+                term TEXT NOT NULL,
+                PRIMARY KEY (source, term)
+            );
+            CREATE INDEX IF NOT EXISTS idx_source ON drawers(source);
+            CREATE INDEX IF NOT EXISTS idx_source_terms_term ON source_terms(term);
             CREATE INDEX IF NOT EXISTS idx_wing_room ON drawers(wing, room);
             CREATE INDEX IF NOT EXISTS idx_created ON drawers(created_at);
             CREATE VIRTUAL TABLE IF NOT EXISTS drawers_fts USING fts5(
@@ -130,7 +139,25 @@ class Memory:
             END;
             """
         )
+        self._migrate_schema()
+        self._backfill_source_terms()
         self._db.commit()
+
+    def _migrate_schema(self) -> None:
+        columns = {
+            row["name"] for row in self._db.execute("PRAGMA table_info(drawers)").fetchall()
+        }
+        if "indexed_at" not in columns:
+            self._db.execute("ALTER TABLE drawers ADD COLUMN indexed_at REAL")
+        if "semantic_status" not in columns:
+            self._db.execute(
+                "ALTER TABLE drawers ADD COLUMN semantic_status TEXT NOT NULL DEFAULT 'pending'"
+            )
+
+    def _backfill_source_terms(self) -> None:
+        rows = self._db.execute("SELECT DISTINCT source FROM drawers").fetchall()
+        for row in rows:
+            self._upsert_source_terms(row["source"])
 
     def add(self, text: str, source: str, *, wing: str = "default", room: str = "default",
             metadata: dict[str, Any] | None = None) -> Drawer:
@@ -143,9 +170,19 @@ class Memory:
             metadata=metadata or {},
         )
         cur = self._db.execute(
-            "INSERT OR IGNORE INTO drawers (id, text, source, wing, room, created_at, metadata)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (d.id, d.text, d.source, d.wing, d.room, d.created_at, json.dumps(d.metadata)),
+            "INSERT OR IGNORE INTO drawers "
+            "(id, text, source, wing, room, created_at, semantic_status, metadata)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                d.id,
+                d.text,
+                d.source,
+                d.wing,
+                d.room,
+                d.created_at,
+                "pending" if self._semantic_enabled() else "skipped",
+                json.dumps(d.metadata),
+            ),
         )
         self._db.commit()
         # Insert-time dedup: when the (text, source) pair already exists,
@@ -162,8 +199,18 @@ class Memory:
             if existing is not None:
                 return existing
             return d
+        self._upsert_source_terms(d.source)
         self._index_semantic(d)
         return d
+
+    def _upsert_source_terms(self, source: str) -> None:
+        terms = _path_tokens(source)
+        if not terms:
+            return
+        self._db.executemany(
+            "INSERT OR IGNORE INTO source_terms (source, term) VALUES (?, ?)",
+            [(source, term) for term in terms],
+        )
 
     @property
     def last_insert_was_new(self) -> bool:
@@ -314,19 +361,20 @@ class Memory:
         """
         if not query_tokens:
             return []
-        try:
-            rows = self._db.execute(
-                "SELECT DISTINCT source FROM drawers"
-            ).fetchall()
-        except sqlite3.OperationalError:
-            return []
+        placeholders = ",".join("?" for _ in query_tokens)
+        rows = self._db.execute(
+            f"""
+            SELECT source, COUNT(*) AS overlap
+            FROM source_terms
+            WHERE term IN ({placeholders})
+            GROUP BY source
+            ORDER BY overlap DESC, source ASC
+            """,
+            tuple(query_tokens),
+        ).fetchall()
         matches: list[tuple[int, str]] = []
         for row in rows:
-            source = row["source"]
-            source_tokens = _path_tokens(source)
-            overlap = query_tokens & source_tokens
-            if overlap:
-                matches.append((len(overlap), source))
+            matches.append((int(row["overlap"]), row["source"]))
         if not matches:
             return []
         matches.sort(reverse=True)
@@ -404,6 +452,21 @@ class Memory:
         basename = [s for s in sources if s.rsplit("/", 1)[-1] == needle]
         if basename:
             return basename
+        terms = _query_terms(needle)
+        if terms:
+            placeholders = ",".join("?" for _ in terms)
+            indexed = self._db.execute(
+                f"""
+                SELECT source, COUNT(*) AS overlap
+                FROM source_terms
+                WHERE term IN ({placeholders})
+                GROUP BY source
+                ORDER BY overlap DESC, source ASC
+                """,
+                tuple(terms),
+            ).fetchall()
+            if indexed:
+                return [row["source"] for row in indexed]
         needle_lower = needle.lower()
         return [s for s in sources if needle_lower in s.lower()]
 
@@ -422,6 +485,10 @@ class Memory:
             f"DELETE FROM drawers WHERE source IN ({placeholders})",
             tuple(sources),
         )
+        self._db.execute(
+            f"DELETE FROM source_terms WHERE source IN ({placeholders})",
+            tuple(sources),
+        )
         self._db.commit()
         for drawer_id in drawer_ids:
             self._delete_semantic(drawer_id)
@@ -429,7 +496,14 @@ class Memory:
         return len(drawer_ids)
 
     def forget(self, drawer_id: str) -> bool:
+        row = self._db.execute("SELECT source FROM drawers WHERE id = ?", (drawer_id,)).fetchone()
         cur = self._db.execute("DELETE FROM drawers WHERE id = ?", (drawer_id,))
+        if row is not None:
+            remaining = self._db.execute(
+                "SELECT 1 FROM drawers WHERE source = ? LIMIT 1", (row["source"],)
+            ).fetchone()
+            if remaining is None:
+                self._db.execute("DELETE FROM source_terms WHERE source = ?", (row["source"],))
         self._db.commit()
         self._delete_semantic(drawer_id)
         return cur.rowcount > 0
@@ -473,6 +547,12 @@ class Memory:
             ]
             try:
                 col.upsert(documents=documents, ids=ids, metadatas=metadatas)
+                now = time.time()
+                self._db.executemany(
+                    "UPDATE drawers SET indexed_at = ?, semantic_status = 'indexed' WHERE id = ?",
+                    [(now, drawer_id) for drawer_id in ids],
+                )
+                self._db.commit()
                 total += len(batch)
                 self._semantic_error = None
             except Exception as e:
@@ -488,6 +568,50 @@ class Memory:
         ).fetchall()
         return [self._row_to_drawer(r) for r in rows]
 
+    def recent_sources(self, *, since: float, limit: int = 100) -> list[dict[str, Any]]:
+        rows = self._db.execute(
+            """
+            SELECT source, COUNT(*) AS drawers, MAX(created_at) AS latest
+            FROM drawers
+            WHERE created_at >= ?
+            GROUP BY source
+            ORDER BY latest DESC
+            LIMIT ?
+            """,
+            (since, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def source_health(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        rows = self._db.execute(
+            """
+            SELECT
+                source,
+                COUNT(*) AS drawers,
+                MAX(created_at) AS latest,
+                SUM(CASE WHEN semantic_status = 'indexed' THEN 1 ELSE 0 END) AS indexed,
+                SUM(CASE WHEN semantic_status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN semantic_status = 'error' THEN 1 ELSE 0 END) AS errors
+            FROM drawers
+            GROUP BY source
+            ORDER BY latest DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            source = str(data["source"])
+            if source.startswith(("demo:", "note:", "http://", "https://")):
+                data["path_status"] = "virtual"
+            else:
+                from pathlib import Path
+
+                data["path_status"] = "ok" if Path(source).expanduser().exists() else "missing"
+            out.append(data)
+        return out
+
     def stats(self) -> dict[str, Any]:
         n = self._db.execute("SELECT COUNT(*) AS n FROM drawers").fetchone()["n"]
         wings = self._db.execute(
@@ -497,6 +621,9 @@ class Memory:
             "SELECT COUNT(DISTINCT room) AS n FROM drawers"
         ).fetchone()["n"]
         size = self.db_path.stat().st_size if self.db_path.exists() else 0
+        pending = self._db.execute(
+            "SELECT COUNT(*) AS n FROM drawers WHERE semantic_status = 'pending'"
+        ).fetchone()["n"]
         return {
             "drawers": n,
             "wings": wings,
@@ -505,6 +632,7 @@ class Memory:
             "backend": self.cfg.memory_backend,
             "semantic_enabled": self._semantic_enabled(),
             "semantic_error": self._semantic_error,
+            "semantic_pending": pending,
         }
 
     def _semantic_enabled(self) -> bool:
@@ -534,6 +662,10 @@ class Memory:
     def _index_semantic(self, drawer: Drawer) -> None:
         col = self._semantic(create=True)
         if col is None:
+            self._db.execute(
+                "UPDATE drawers SET semantic_status = 'skipped' WHERE id = ?", (drawer.id,)
+            )
+            self._db.commit()
             return
         metadata = {
             "id": drawer.id,
@@ -546,8 +678,17 @@ class Memory:
         }
         try:
             col.upsert(documents=[drawer.text], ids=[drawer.id], metadatas=[metadata])
+            self._db.execute(
+                "UPDATE drawers SET indexed_at = ?, semantic_status = 'indexed' WHERE id = ?",
+                (time.time(), drawer.id),
+            )
+            self._db.commit()
             self._semantic_error = None
         except Exception as e:
+            self._db.execute(
+                "UPDATE drawers SET semantic_status = 'error' WHERE id = ?", (drawer.id,)
+            )
+            self._db.commit()
             self._semantic_error = str(e)
             log.warning("semantic upsert failed for %s: %s", drawer.id[:8], e)
 
