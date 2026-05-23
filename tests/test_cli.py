@@ -401,3 +401,74 @@ def test_detect_preflight_reports_ollama_state(env: Path):
     cfg = Config.load()
     rows = _detect_preflight(cfg)
     assert any(name == "ollama" for _, name, _ in rows)
+
+
+# --- first-run polish: _fire_once_hint + add-success next-step pointer ---
+
+
+def test_fire_once_hint_prints_then_silent(env: Path, capsys):
+    """First call writes the sentinel + prints; second call is silent."""
+    from superton.cli import _fire_once_hint
+    from superton.config import Config
+
+    cfg = Config.load()
+    _fire_once_hint(cfg, "marker_a", "first message")
+    out_first = capsys.readouterr().out
+    assert "first message" in out_first
+
+    _fire_once_hint(cfg, "marker_a", "second message — should NOT appear")
+    out_second = capsys.readouterr().out
+    assert "second message" not in out_second
+    assert (env / ".hints" / "marker_a").exists()
+
+
+def test_fire_once_hint_independent_markers(env: Path, capsys):
+    """Different marker names get independent one-shot semantics."""
+    from superton.cli import _fire_once_hint
+    from superton.config import Config
+
+    cfg = Config.load()
+    _fire_once_hint(cfg, "marker_x", "X message")
+    _fire_once_hint(cfg, "marker_y", "Y message")
+    out = capsys.readouterr().out
+    assert "X message" in out
+    assert "Y message" in out
+
+
+def test_fire_once_hint_swallows_oserror(env: Path, capsys, monkeypatch):
+    """A read-only filesystem must not crash the calling command."""
+    from superton.cli import _fire_once_hint
+    from superton.config import Config
+
+    def _raise(*_args, **_kwargs):
+        raise OSError("read-only fs")
+
+    monkeypatch.setattr("pathlib.Path.mkdir", _raise)
+    cfg = Config.load()
+    _fire_once_hint(cfg, "marker_z", "z message — sentinel skipped, hint also skipped")
+    # The contract: no exception, no hint shown (we couldn't write the
+    # sentinel, so showing-without-tracking would mean repeating forever).
+    out = capsys.readouterr().out
+    assert "z message" not in out
+
+
+def test_add_success_emits_first_run_next_step(env: Path, tmp_path: Path):
+    """The first successful `superton add` includes a next-step pointer
+    to the interactive shell; subsequent adds stay quiet."""
+    note = tmp_path / "note.txt"
+    note.write_text("rate limiting via token bucket", encoding="utf-8")
+
+    result_1 = CliRunner().invoke(app, ["add", str(note)])
+    assert result_1.exit_code == 0
+    assert "superton" in result_1.stdout
+    # The hint phrasing is "next: superton to chat" — assert on the
+    # stable bits without locking the exact wording.
+    assert "to chat" in result_1.stdout
+
+    # Re-running on the same palace must not repeat the hint — repeat
+    # adds shouldn't feel chatty.
+    note2 = tmp_path / "note2.txt"
+    note2.write_text("token bucket vs leaky bucket", encoding="utf-8")
+    result_2 = CliRunner().invoke(app, ["add", str(note2)])
+    assert result_2.exit_code == 0
+    assert "to chat" not in result_2.stdout

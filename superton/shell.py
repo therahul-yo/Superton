@@ -633,6 +633,9 @@ def _answer(
 
 
 def run() -> None:
+    # Lazy import to keep the cli ⇄ shell circular dependency one-way.
+    from superton.cli import _fire_once_hint
+
     cfg = Config.load()
     ui.set_theme(cfg.theme)
     mem = Memory(cfg)
@@ -801,6 +804,15 @@ def run() -> None:
             _answer_text = _answer(mem, model, text, history=history)
             history.append(("user", text))
             history.append(("assistant", _answer_text))
+            # First-answer hint — points at the theme system after the
+            # user has seen a real cited answer. Fires once per palace.
+            if _answer_text:
+                _fire_once_hint(
+                    cfg,
+                    "first_answer",
+                    "tip: type [bold]/theme[/bold] to switch palette · "
+                    "[bold]/help[/bold] for all commands",
+                )
             # Bound the ring buffer.
             if len(history) > CONVERSATION_WINDOW * 2:
                 history = history[-CONVERSATION_WINDOW * 2 :]

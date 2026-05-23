@@ -263,6 +263,33 @@ DEMO_DRAWERS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
+def _fire_once_hint(cfg: Config, marker: str, message: str) -> None:
+    """Show a one-shot onboarding hint per user.
+
+    Hints are gated by a sentinel file under `cfg.home / .hints/`. First
+    call writes the file and prints; subsequent calls become no-ops.
+    `superton uninstall` removes `cfg.home`, so a fresh install replays
+    the hints exactly once.
+
+    Designed for tiny "next step" pointers (try `superton`, type
+    `/theme`). Anything that needs to keep firing belongs in regular
+    flow output, not here.
+    """
+    try:
+        marker_path = cfg.home / ".hints" / marker
+        if marker_path.exists():
+            return
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.touch()
+    except OSError as e:
+        # If we can't write the sentinel for whatever reason (read-only
+        # FS in CI, perms quirk), silently skip — the hint matters less
+        # than not crashing on a successful action.
+        log.debug("hint sentinel write failed for %s: %s", marker, e)
+        return
+    ui.hint(message)
+
+
 def _seed_demo(cfg: Config) -> tuple[int, int]:
     """Seed a tiny demo palace. Returns (added, deduped)."""
     mem = Memory(cfg)
@@ -287,7 +314,14 @@ def _offer_demo_seed(cfg: Config, *, yes: bool) -> None:
     if stats["drawers"] != 0:
         return
     ui.blank()
-    if not typer.confirm("Seed a 3-drawer demo palace so you can ask immediately?", default=False):
+    # Default-yes: a 3-drawer demo means the user can chat the
+    # moment init finishes, instead of bouncing off an empty-palace
+    # refusal on their first `superton ask`. They can opt out with
+    # `n`; the seed is also idempotent (`superton uninstall` clears it).
+    if not typer.confirm(
+        "Seed a 3-drawer demo palace so you can chat immediately?",
+        default=True,
+    ):
         return
     added, deduped = _seed_demo(cfg)
     detail = f"{deduped} already present" if deduped else "try: superton ask \"what is SuperTon?\""
@@ -725,6 +759,15 @@ def add(
     if deduped:
         summary += f"  ·  {deduped} deduped"
     ui.ok(f"ingested {total_drawers} drawers", summary)
+    # First-add hint — fires once per palace, then becomes a no-op.
+    # Keeps the post-install flow self-explanatory without spamming
+    # repeat users on every subsequent ingest.
+    if total_drawers > 0:
+        _fire_once_hint(
+            cfg,
+            "add_done",
+            "next: [bold]superton[/bold] to chat with your drawers",
+        )
 
 
 @app.command()
