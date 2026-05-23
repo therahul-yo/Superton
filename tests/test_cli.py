@@ -57,6 +57,25 @@ def test_sources_health_reports_virtual_note(env: Path):
     assert "virtual" in health.stdout
 
 
+def test_today_lists_recent_note(env: Path):
+    captured = CliRunner().invoke(app, ["note", "today's note"])
+    assert captured.exit_code == 0
+
+    result = CliRunner().invoke(app, ["today"])
+    assert result.exit_code == 0
+    # `today` is a thin wrapper around the same renderer as `recent` with
+    # days=1 — verify both the header reflects that window and the just-
+    # captured note appears in the output.
+    assert "last 1 day(s)" in result.stdout
+    assert "note:" in result.stdout
+
+
+def test_today_empty_palace_renders_placeholder(env: Path):
+    result = CliRunner().invoke(app, ["today"])
+    assert result.exit_code == 0
+    assert "no recent sources" in result.stdout
+
+
 def test_add_missing_path_errors(env: Path):
     result = CliRunner().invoke(app, ["add", "/nonexistent/path/here"])
     assert result.exit_code == 1

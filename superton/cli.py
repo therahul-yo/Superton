@@ -960,12 +960,11 @@ def list_drawers(
     ui.print_table(table)
 
 
-@app.command()
-def recent(
-    days: int = typer.Option(7, "--days", "-d", help="look back this many days"),
-    limit: int = typer.Option(30, "--limit", "-n"),
-) -> None:
-    """List sources added recently."""
+def _print_recent_sources(*, days: int, limit: int) -> None:
+    """Render the 'recent' table. Shared by `recent` and `today` so the
+    Typer command bodies don't call each other (Option defaults are
+    OptionInfo sentinels at function-call time, which can confuse direct
+    Python invocation)."""
     since = time.time() - max(days, 1) * 86400
     mem = Memory(_cfg())
     rows = mem.recent_sources(since=since, limit=limit)
@@ -981,9 +980,18 @@ def recent(
 
 
 @app.command()
+def recent(
+    days: int = typer.Option(7, "--days", "-d", help="look back this many days"),
+    limit: int = typer.Option(30, "--limit", "-n"),
+) -> None:
+    """List sources added recently."""
+    _print_recent_sources(days=days, limit=limit)
+
+
+@app.command()
 def today(limit: int = typer.Option(30, "--limit", "-n")) -> None:
     """List sources added in the last 24 hours."""
-    recent(days=1, limit=limit)
+    _print_recent_sources(days=1, limit=limit)
 
 
 @app.command()

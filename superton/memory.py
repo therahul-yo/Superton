@@ -13,6 +13,7 @@ import json
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from superton.config import Config
@@ -140,8 +141,13 @@ class Memory:
             """
         )
         self._migrate_schema()
-        self._backfill_source_terms()
         self._db.commit()
+
+    # Schema versions:
+    #   0 → pre-source_terms layout (legacy)
+    #   1 → added source_terms table + indexed_at/semantic_status columns;
+    #       source_terms backfilled from drawers
+    _SCHEMA_VERSION = 1
 
     def _migrate_schema(self) -> None:
         columns = {
@@ -153,6 +159,14 @@ class Memory:
             self._db.execute(
                 "ALTER TABLE drawers ADD COLUMN semantic_status TEXT NOT NULL DEFAULT 'pending'"
             )
+
+        current = self._db.execute("PRAGMA user_version").fetchone()[0]
+        if current < 1:
+            # One-time backfill of source_terms from any pre-existing drawers.
+            # Running this on every startup would be O(distinct_sources) per
+            # open; pin the version so it only happens once per palace.
+            self._backfill_source_terms()
+            self._db.execute(f"PRAGMA user_version = {self._SCHEMA_VERSION}")
 
     def _backfill_source_terms(self) -> None:
         rows = self._db.execute("SELECT DISTINCT source FROM drawers").fetchall()
@@ -606,8 +620,6 @@ class Memory:
             if source.startswith(("demo:", "note:", "http://", "https://")):
                 data["path_status"] = "virtual"
             else:
-                from pathlib import Path
-
                 data["path_status"] = "ok" if Path(source).expanduser().exists() else "missing"
             out.append(data)
         return out
