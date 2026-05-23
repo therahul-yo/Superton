@@ -11,6 +11,14 @@ log = get_logger("ingest")
 
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 200
+MAX_FILE_BYTES = 25 * 1024 * 1024
+
+
+def file_too_large(path: Path, *, max_bytes: int = MAX_FILE_BYTES) -> bool:
+    try:
+        return path.stat().st_size > max_bytes
+    except OSError:
+        return False
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> Iterator[str]:

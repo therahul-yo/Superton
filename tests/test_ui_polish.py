@@ -47,6 +47,23 @@ def test_last_insert_was_new_alternates(cfg: Config):
     mem.close()
 
 
+def test_source_health_tracks_semantic_status(cfg: Config):
+    mem = Memory(cfg)
+    mem.add(text="alpha", source="note:alpha")
+    rows = mem.source_health()
+    assert rows[0]["source"] == "note:alpha"
+    assert rows[0]["path_status"] == "virtual"
+    assert rows[0]["pending"] == 0
+    mem.close()
+
+
+def test_source_matches_uses_filename_terms(cfg: Config):
+    mem = Memory(cfg)
+    mem.add(text="rate limiting", source="/tmp/project-roadmap.md")
+    assert mem.source_matches("roadmap") == ["/tmp/project-roadmap.md"]
+    mem.close()
+
+
 def test_ingest_path_returns_deduped_count(cfg: Config, tmp_path: Path):
     from superton.shell import _ingest_path
 
