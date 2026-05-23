@@ -82,9 +82,22 @@ def test_configure_force_replaces_handlers(monkeypatch: pytest.MonkeyPatch):
 # --- error hints ------------------------------------------------------------
 
 
-def test_hint_for_ollama_error_mentions_serve():
+def test_hint_for_ollama_error_mentions_serve(monkeypatch: pytest.MonkeyPatch):
+    # Pretend Ollama is on PATH so we exercise the "installed but daemon
+    # down" branch — the new install-detection logic returns a different
+    # hint when shutil.which returns None (covered by the test below).
+    monkeypatch.setattr(errors.shutil, "which", lambda _name: "/usr/local/bin/ollama")
     h = hint_for(OllamaError("connection refused"))
     assert "ollama serve" in h.hint
+
+
+def test_hint_for_ollama_error_when_not_installed_points_at_download(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(errors.shutil, "which", lambda _name: None)
+    h = hint_for(OllamaError("connection refused"))
+    assert "not installed" in h.summary
+    assert "ollama.com/download" in h.hint or "superton init" in h.hint
 
 
 def test_hint_for_huggingface_error_mentions_token():
@@ -92,7 +105,10 @@ def test_hint_for_huggingface_error_mentions_token():
     assert "HF_TOKEN" in h.hint
 
 
-def test_hint_for_model_error_mentions_init():
+def test_hint_for_model_error_mentions_init(monkeypatch: pytest.MonkeyPatch):
+    # `hint_for(ModelError)` also branches on shutil.which now. Pretend
+    # Ollama is present so we exercise the original "no backend" path.
+    monkeypatch.setattr(errors.shutil, "which", lambda _name: "/usr/local/bin/ollama")
     h = hint_for(ModelError("no backend"))
     assert "superton init" in h.hint
 
