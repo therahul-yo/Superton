@@ -10,24 +10,20 @@ landed.
 ## User Install
 
 ```bash
-# one-liner installer (pulls the [tui] extra by default)
+# one-liner installer
 curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh
 
 # or manually with uv
-uv tool install --with "textual>=0.60.0" "git+https://github.com/therahul-yo/Superton.git"
+uv tool install "git+https://github.com/therahul-yo/Superton.git"
 
 superton init
 superton            # interactive shell
-superton tui        # full-screen Textual interface
 ```
-
-Set `SUPERTON_NO_TUI=1` before running `install.sh` to skip the TUI
-extra (saves ~20 MB of Textual + linkify deps).
 
 After PyPI publishing:
 
 ```bash
-uv tool install "superton[tui]"
+uv tool install "superton"
 superton init
 ```
 
@@ -73,8 +69,8 @@ superton init --no-model -y # confirm preflight card + ready card render
 6. **Smoke-test the published wheel** in a clean environment:
 
    ```bash
-   uvx --refresh "superton[tui]" --version
-   uvx --refresh "superton[tui]" tui
+   uvx --refresh "superton" --version
+   uvx --refresh "superton"
    ```
 
 ## Versioning Policy
@@ -111,11 +107,8 @@ walk through each before pushing a tag:
 
 - **Coverage gate**: `--cov-fail-under=45` is set in CI. Adding new
   un-tested code can drop below this. Run the cov check locally.
-- **macOS CI**: textual + pytest-asyncio + Pilot occasionally trip on
-  macOS GitHub runners. Tests must pass on both Linux and macOS.
-- **TUI extra**: a vanilla `pip install superton` doesn't pull
-  Textual. `superton tui` is supposed to print a clean recovery hint
-  rather than crash — verify manually.
+- **macOS CI**: pytest-asyncio occasionally trips on macOS GitHub
+  runners. Tests must pass on both Linux and macOS.
 - **Uninstall leak**: `superton uninstall` must remove
   `~/.local/bin/superton` *and* `~/.local/share/uv/tools/superton`.
   As of `0.3.0-beta.1` this is `subprocess.run` + an explicit orphan

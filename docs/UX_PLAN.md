@@ -18,7 +18,7 @@ These are the rules every UX decision below has to obey.
    No green, no cyan, no fourth signal channel.
 2. **Active theme owns post-install.** Once init finishes, the user's
    chosen theme (nebula / mono / solar / frost) is the source of truth.
-   The install palette never appears in chat, search, or the TUI.
+   The install palette never appears in chat or search.
 3. **Every prompt is preceded by a plan.** Users see the full sequence
    (`preflight_card`) before any prompt fires. No surprise dialogs.
 4. **Every error carries a recovery hint.** `stage_warn(msg, hint=...)`
@@ -57,9 +57,8 @@ earned a slot. If the color is decoration, it's wrong.
 - README: lead with a 60-second pitch + one install command, then the
   three-bullet "what is this". Push deep config below the fold.
 - `install.sh`: ANSI-colorize using the install palette
-  (`\033[38;2;255;176;46m` for orange, etc.). Show a 3-line preflight
-  before doing anything: "will install uv, will install superton, will
-  add ~textual~ extra". Honor `--dry-run`.
+  (`\033[38;2;255;176;46m` for orange, etc.). Show a preflight before
+  doing anything: "will install uv, will install superton". Honor `--dry-run`.
 - `install.sh`: detect existing install and say "you have N.N.N, upgrading
   to M.M.M" instead of silently re-running `uv tool install --force`.
 
@@ -132,7 +131,6 @@ here costs an install.
   ▸ ready
     1.  superton add ~/notes        ← do this first
     2.  superton                    then chat
-        (or `superton tui` for full-screen)
   ```
   Push `import claude-code`, `mcp serve`, `doctor` into a dim "also
   available:" footer under the ladder.
@@ -181,34 +179,7 @@ came from their data, they go back to ChatGPT.
 
 ---
 
-## Stage 5 — the TUI (`superton tui`)
-
-**Moment**: user has had a few good REPL sessions and tries the full TUI.
-
-**What's wrong today**:
-- No keybinding cheatsheet visible — F1 modal exists but isn't advertised.
-- Sidebar width doesn't persist across restarts.
-- At wide widths (>140 cols), drawer preview still opens as a modal — the
-  third pane noted in `TUI_ARCHITECTURE.md` is unbuilt.
-- Theme switching via `/theme solar` hot-reloads CSS — great — but the
-  footer doesn't show the active theme name.
-
-**Change** (mirrors UX roadmap → Soon, restated as a coherent push):
-- Footer line: `nebula · proton · 217 drawers · ?: help` — always
-  visible, click `?` to open the F1 modal.
-- Persist sidebar width + last focus + active theme to
-  `~/.superton/tui_state.json`. Restore on launch.
-- At ≥140 cols, render the drawer preview in a third pane instead of a
-  modal. Modal stays the fallback for narrow terminals.
-- Highlight matched search terms in `primary` color inside previews —
-  same as REPL search results.
-
-**Why**: the TUI is the long-term home for power users. Today it's
-functional; this push makes it *sticky*.
-
----
-
-## Stage 6 — errors, recovery, observability
+## Stage 5 — errors, recovery, observability
 
 Errors are part of the UX. Today's gaps:
 
@@ -245,13 +216,11 @@ funnel.
 - First-REPL onboarding banner.
 - `/help` 3-column redesign.
 - Download confirm before stage 3 model pull.
-- Footer + state persistence in TUI.
 
 ### Phase 3 — month two
 - Resumable init (state marker file).
 - Retrieval line + citation chips in REPL `ask`.
 - Crash card via `errors.render` for unhandled exceptions.
-- Drawer-preview third pane in TUI.
 - `superton uninstall --archive` default.
 
 ### Phase 4 — opportunistic
@@ -283,7 +252,7 @@ These come up regularly. We're not doing them yet:
 
 - **Telemetry / opt-in analytics** — privacy is the brand. Phase-4 at
   earliest, and only if every other lever has been pulled.
-- **Web UI** — three frontends is two too many until the TUI is sticky.
+- **Web UI** — second frontend; not worth maintaining alongside the CLI yet.
 - **Auto-update** — possible in Phase 3 via `uv tool install --upgrade`,
   but only as an explicit `superton update`, never silent.
 - **Team palace / sharing** — undermines local-first. Revisit after 1.0.

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 once it reaches 1.0.0. Until then, every minor bump may include breaking
 changes — they are called out in the **Breaking** section.
 
+## [Unreleased]
+
+### Removed (BREAKING)
+
+- **Textual TUI.** `superton tui`, the `[tui]` optional extra, the
+  `superton/tui/` module, and all related docs (`docs/TUI_ARCHITECTURE.md`,
+  TUI sections in README/RELEASE/UX_PLAN/UX_ROADMAP) are gone. The
+  classic prompt-toolkit shell (`superton`) is now the only interactive
+  surface. Reasoning: the TUI duplicated maintenance against the shell
+  without earning sticky usage. If you were running `superton tui`,
+  switch to plain `superton`; retrieval, slash commands, and theming
+  are identical.
+
+### Changed
+
+- `install.sh` no longer offers a `[tui]` extra path. `SUPERTON_NO_TUI`
+  is also removed — the variable is now a no-op.
+- `pyproject.toml`: dropped the `tui` optional-dependencies entry and
+  the dev-extra `textual` pin.
+- `superton/chat.py`, `superton/shell.py`, `superton/ui.py`: scrubbed
+  TUI references from docstrings, comments, and the `ready_card` install
+  ladder.
+
 ## [0.3.0-beta.1] — 2026-05-23
 
 First **beta** release — graduation from "production-grade alpha" to

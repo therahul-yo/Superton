@@ -12,15 +12,13 @@ from superton.model import Model, ModelError
 
 log = get_logger("shell")
 
-# Constants re-exported for cli.py and other callers — kept in `chat` so the
-# TUI uses the same numbers.
+# Constants re-exported for cli.py and other callers — canonical home is `chat`.
 ANSWER_CONTEXT_DRAWERS = chat.ANSWER_CONTEXT_DRAWERS
 ANSWER_DRAWER_CHARS = chat.ANSWER_DRAWER_CHARS
 CONVERSATION_WINDOW = chat.CONVERSATION_WINDOW
 
-# Back-compat shims: the cli module imports these names from shell. They now
-# forward to the pure `chat` implementation so both the shell and the TUI
-# call the same code.
+# Back-compat shims: the cli module imports these names from shell. They
+# forward to the pure `chat` implementation.
 _relevant_hits = chat.relevant_hits
 _any_token_match = chat.any_token_match
 _expand_hits_for_answer = chat.expand_hits_for_answer
@@ -601,10 +599,9 @@ def _answer(
 ) -> str:
     """Render a chat turn through the shell's Rich console.
 
-    The retrieval / refusal / prompt-building logic lives in `superton.chat`
-    so the TUI calls the exact same code. This function is the *display*
-    half: it takes the planned answer, streams tokens through
-    `ui.stream_answer`, and prints citations.
+    The retrieval / refusal / prompt-building logic lives in `superton.chat`.
+    This function is the *display* half: it takes the planned answer,
+    streams tokens through `ui.stream_answer`, and prints citations.
     """
     # Retrieval can take a few hundred ms on large palaces — show a
     # spinner so the pause between Enter and the Miniton header doesn't

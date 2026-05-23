@@ -43,10 +43,6 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
-    "textual>=0.60.0",  # needed to test the TUI; ships separately as `[tui]` extra
-]
-tui = [
-    "textual>=0.60.0",
 ]
 
 [project.scripts]

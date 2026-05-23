@@ -30,11 +30,6 @@ if ! command -v uv >/dev/null 2>&1; then
   need_uv="yes"
 fi
 
-with_tui="yes"
-if [ "${SUPERTON_NO_TUI:-0}" = "1" ]; then
-  with_tui="no"
-fi
-
 existing="none"
 if command -v superton >/dev/null 2>&1; then
   existing="$(superton --version 2>/dev/null || printf 'installed')"
@@ -42,7 +37,6 @@ fi
 
 info "SuperTon installer preflight"
 printf '  %swill install uv:%s %s\n' "$MUTED" "$RESET" "$need_uv"
-printf '  %swill install TUI extra:%s %s\n' "$MUTED" "$RESET" "$with_tui"
 printf '  %sexisting SuperTon:%s %s\n' "$MUTED" "$RESET" "$existing"
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -74,19 +68,10 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-# Install with the [tui] extra by default so `superton tui` works out of
-# the box without a follow-up reinstall. Set SUPERTON_NO_TUI=1 to skip
-# the extra (saves ~20 MB of Textual + linkify deps).
-if [ "${SUPERTON_NO_TUI:-0}" = "1" ]; then
-  info "installing SuperTon (no TUI extra)"
-  uv tool install "$REPO_URL" --force
-else
-  info "installing SuperTon with TUI extra"
-  uv tool install --with "textual>=0.60.0" "$REPO_URL" --force
-fi
+info "installing SuperTon"
+uv tool install "$REPO_URL" --force
 
 info "done"
 printf 'run: superton init\n'
 echo
-printf 'tip: %ssuperton%s      starts the classic interactive shell\n' "$ORANGE" "$RESET"
-printf '     %ssuperton tui%s  launches the full-screen Textual interface\n' "$ORANGE" "$RESET"
+printf 'tip: %ssuperton%s      starts the interactive shell\n' "$ORANGE" "$RESET"
