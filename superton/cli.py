@@ -1295,6 +1295,39 @@ def _tool_uninstall_command() -> list[str]:
     return [sys.executable, "-m", "pip", "uninstall", "-y", "superton"]
 
 
+def _tool_orphan_paths(method: str) -> list[Path]:
+    """Filesystem locations that a successful `<installer> uninstall
+    superton` should empty out. Used as a defensive sweep after the
+    installer command returns so a partial / silent failure (observed
+    on some uv versions where the tool venv directory survived a
+    `uv tool uninstall`) doesn't leave the user with an orphan
+    install dir nobody knows how to clean."""
+    home = Path.home()
+    if method == "uv":
+        return [
+            home / ".local" / "share" / "uv" / "tools" / "superton",
+            home / ".local" / "bin" / "superton",
+        ]
+    if method == "pipx":
+        return [
+            home / ".local" / "share" / "pipx" / "venvs" / "superton",
+            home / ".local" / "bin" / "superton",
+        ]
+    return []
+
+
+def _remove_orphan(path: Path) -> bool:
+    """Remove a file, symlink (even broken), or directory. Returns True
+    when something was actually removed."""
+    if path.is_symlink() or path.exists():
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        return True
+    return False
+
+
 def _uninstall_model_names(cfg: Config, *, models: bool, all_models: bool) -> list[str]:
     if not models:
         return []
@@ -1328,9 +1361,13 @@ def uninstall(
     binary itself. Pass `--keep-data`, `--keep-models`, or `--keep-tool`
     to opt out of any stage.
 
-    The CLI removal uses `os.execvp` so the binary can replace itself —
-    a vanilla `subprocess.run` from inside the running process often
-    leaves a stale shim in `~/.local/bin/superton`.
+    The CLI removal runs the installer's uninstall command via
+    `subprocess.run`, then defensively sweeps the standard tool-venv +
+    bin-shim locations. The earlier `os.execvp`-into-uv pattern gave no
+    way to verify the cleanup actually finished — some uv versions
+    silently left the tool venv directory behind, so a user running
+    `superton uninstall` would still see `~/.local/share/uv/tools/superton`
+    after the command returned 0.
     """
     cfg = _cfg()
     model_names = _uninstall_model_names(cfg, models=models, all_models=all_models)
@@ -1407,30 +1444,52 @@ def uninstall(
 
     if tool:
         step += 1
-        ui.blank()
-        # We close stdout/Rich console gracefully BEFORE swapping process
-        # images. After os.execvp our Python process is gone — the
-        # installer's uninstall command takes over and can safely
-        # unlink the binary that was holding our PID.
-        ui.console().print(
-            f"[{ui.theme().muted}]→ [{step}/{total_steps}] swapping into:[/]  "
-            f"[bold]{' '.join(tool_cmd)}[/]"
-        )
-        ui.blank()
-        try:
-            os.execvp(tool_cmd[0], tool_cmd)
-        except OSError as e:
-            # execvp only fails if the installer command is missing — fall
-            # back to subprocess so we at least leave a useful exit code.
-            log.error("execvp(%s) failed: %s", tool_cmd[0], e)
-            ui.err(f"{tool_cmd[0]} not on PATH", str(e))
-            ui.hint("run manually:  " + " ".join(tool_cmd))
-            raise typer.Exit(1) from e
+        with ui.stage("removing superton CLI", step=step, total=total_steps):
+            ui.hint(" ".join(tool_cmd))
+            try:
+                result = subprocess.run(
+                    tool_cmd,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+            except FileNotFoundError as e:
+                # Installer binary isn't on PATH — fall through to the
+                # defensive sweep so any orphan files still get cleaned.
+                log.error("%s not on PATH: %s", tool_cmd[0], e)
+                ui.stage_warn(
+                    f"{tool_cmd[0]} not on PATH",
+                    hint="cleanup will still try to remove orphan files",
+                )
+            else:
+                stderr = (result.stderr or "").strip()
+                if result.returncode == 0:
+                    ui.stage_ok(f"{install_method} reported uninstall")
+                else:
+                    ui.stage_warn(
+                        f"{install_method} exited {result.returncode}",
+                        hint=stderr or "see output above",
+                    )
 
-    # We only reach here when --keep-tool was set.
+            # Defensive sweep — unlink any leftover tool venv directory
+            # and bin shim the installer should have removed but didn't.
+            # Even when the command returns 0, observed uv builds have
+            # left ~/.local/share/uv/tools/superton on disk; explicit rm
+            # makes `superton uninstall` actually idempotent.
+            removed_orphans: list[Path] = []
+            for orphan in _tool_orphan_paths(install_method):
+                if _remove_orphan(orphan):
+                    removed_orphans.append(orphan)
+            if removed_orphans:
+                for p in removed_orphans:
+                    ui.stage_ok(f"removed orphan {p}")
+
     ui.blank()
     ui.ok("uninstall complete")
-    ui.hint("the `superton` binary is still on your PATH (--keep-tool was passed)")
+    if not tool:
+        ui.hint(
+            "the `superton` binary is still on your PATH (--keep-tool was passed)"
+        )
 
 
 import_app = typer.Typer(help="Import conversations from other AI tools.")

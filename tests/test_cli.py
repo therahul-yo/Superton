@@ -189,27 +189,70 @@ def test_uninstall_removes_data_when_confirmed(env: Path, monkeypatch):
     assert not env.exists()
 
 
-def test_uninstall_default_swaps_into_tool_uninstall(env: Path, monkeypatch):
-    """With no --keep-tool, uninstall must call os.execvp so the binary
-    can be safely unlinked. The CliRunner can't actually execvp, but we
-    can patch it to verify the call site exists and aims at the right cmd."""
+def test_uninstall_default_runs_tool_uninstall(env: Path, monkeypatch):
+    """With no --keep-tool, `uninstall` must invoke the installer's
+    uninstall command via subprocess (replacing the earlier os.execvp
+    pattern) and then sweep any orphan tool dirs the installer left
+    behind. The CliRunner can't actually unlink the test runner's own
+    bin so we patch subprocess.run + the orphan-sweep paths to a
+    sandbox directory and assert both fire."""
     monkeypatch.setattr("superton.cli.shutil.which", lambda name: "/usr/bin/" + name)
+    # Force the install-method detection to "uv" so we test the most
+    # common path. Without this the path of the test interpreter would
+    # decide it (usually "pip"), and the orphan-sweep list would be
+    # empty.
+    monkeypatch.setattr("superton.cli._detect_install_method", lambda: "uv")
 
-    captured: list[tuple[str, list[str]]] = []
+    orphan_tool_dir = env / "fake_tool_dir"
+    orphan_tool_dir.mkdir(parents=True)
+    orphan_bin = env / "fake_bin"
+    orphan_bin.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(
+        "superton.cli._tool_orphan_paths",
+        lambda method: [orphan_tool_dir, orphan_bin],
+    )
 
-    def _fake_execvp(file: str, args: list[str]) -> None:
-        captured.append((file, args))
-        # execvp normally never returns; raise SystemExit to mimic the
-        # process being replaced so the surrounding code stops cleanly.
-        raise SystemExit(0)
+    captured: list[list[str]] = []
 
-    monkeypatch.setattr("superton.cli.os.execvp", _fake_execvp)
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(cmd, *args, **kwargs):
+        captured.append(list(cmd))
+        return _Result()
+
+    monkeypatch.setattr("superton.cli.subprocess.run", _fake_run)
     result = CliRunner().invoke(app, ["uninstall", "--yes", "--keep-data", "--keep-models"])
 
-    assert captured, "uninstall should have called os.execvp for the binary"
-    assert captured[0][1][0] in {"uv", "pipx", result.stdout and "python" or "python"} or (
-        "pip" in " ".join(captured[0][1])
-    )
+    assert result.exit_code == 0
+    assert captured, "uninstall should have invoked the installer's uninstall command"
+    assert "superton" in " ".join(captured[0])
+    # The defensive sweep must clean up the orphans the installer left
+    # behind even though the subprocess call returned 0.
+    assert not orphan_tool_dir.exists()
+    assert not orphan_bin.exists()
+
+
+def test_tool_orphan_paths_uv_includes_install_root(env: Path):
+    """The uv-specific orphan sweep targets the documented install dir
+    (`~/.local/share/uv/tools/superton`) plus the bin shim — i.e. the
+    two paths users see when `find ~ -iname '*superton*'` reports a
+    leftover after `superton uninstall` claimed to finish."""
+    from superton.cli import _tool_orphan_paths
+
+    paths = [str(p) for p in _tool_orphan_paths("uv")]
+    assert any(p.endswith(".local/share/uv/tools/superton") for p in paths)
+    assert any(p.endswith(".local/bin/superton") for p in paths)
+
+
+def test_tool_orphan_paths_returns_empty_for_pip(env: Path):
+    """The pip / unknown path has no canonical install-dir to sweep —
+    pip installs go into site-packages which we won't touch."""
+    from superton.cli import _tool_orphan_paths
+
+    assert _tool_orphan_paths("pip") == []
 
 
 def test_detect_install_method_returns_string(env: Path):
