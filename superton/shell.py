@@ -565,7 +565,12 @@ def _answer(
     half: it takes the planned answer, streams tokens through
     `ui.stream_answer`, and prints citations.
     """
-    plan = chat.plan_answer(mem, question, history=history)
+    # Retrieval can take a few hundred ms on large palaces — show a
+    # spinner so the pause between Enter and the Miniton header doesn't
+    # read as a hang. The thinking spinner inside `ui.stream_answer`
+    # covers the gap from then until the first token.
+    with ui.spinner("searching palace…"):
+        plan = chat.plan_answer(mem, question, history=history)
     if plan.refusal is not None:
         _print_assistant(plan.refusal)
         return plan.refusal
