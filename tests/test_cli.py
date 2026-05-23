@@ -262,6 +262,65 @@ def test_detect_install_method_returns_string(env: Path):
     assert method in {"uv", "pipx", "pip"}
 
 
+def test_detect_install_method_uv_via_sys_prefix(monkeypatch):
+    """A uv tool install puts `sys.prefix` under `~/.local/share/uv/tools/<name>`
+    even though `Path(sys.executable).resolve()` follows the bin/python
+    symlink out of the tool dir. Detection must read `sys.prefix`, not
+    the resolved executable — this regression cascaded into an empty
+    orphan-path list and left `~/.local/bin/superton` behind after
+    `superton uninstall` claimed success."""
+    from superton.cli import _detect_install_method
+
+    monkeypatch.setattr(
+        "superton.cli.sys.prefix",
+        "/Users/test/.local/share/uv/tools/superton",
+    )
+    # The cascade only happens when the executable also gets symlink-
+    # resolved away from the tool dir; mimic that here so the test
+    # would fail under the old detection.
+    monkeypatch.setattr(
+        "superton.cli.sys.executable",
+        "/opt/homebrew/Cellar/python@3.12/3.12.7/Frameworks/Python.framework/Versions/3.12/bin/python3.12",
+    )
+    assert _detect_install_method() == "uv"
+
+
+def test_detect_install_method_pipx_via_sys_prefix(monkeypatch):
+    from superton.cli import _detect_install_method
+
+    monkeypatch.setattr(
+        "superton.cli.sys.prefix",
+        "/Users/test/.local/share/pipx/venvs/superton",
+    )
+    monkeypatch.setattr(
+        "superton.cli.sys.executable",
+        "/usr/bin/python3",
+    )
+    assert _detect_install_method() == "pipx"
+
+
+def test_detect_install_method_falls_back_to_pip(monkeypatch):
+    from superton.cli import _detect_install_method
+
+    monkeypatch.setattr("superton.cli.sys.prefix", "/usr/local")
+    monkeypatch.setattr("superton.cli.sys.executable", "/usr/local/bin/python3")
+    assert _detect_install_method() == "pip"
+
+
+def test_detect_install_method_uses_executable_when_prefix_unhelpful(monkeypatch):
+    """Belt-and-braces: if some shell flavour leaves `sys.prefix` looking
+    generic but the executable still lives in a tool dir, we should
+    still pick the right method."""
+    from superton.cli import _detect_install_method
+
+    monkeypatch.setattr("superton.cli.sys.prefix", "/usr/local")
+    monkeypatch.setattr(
+        "superton.cli.sys.executable",
+        "/Users/test/.local/share/uv/tools/superton/bin/python",
+    )
+    assert _detect_install_method() == "uv"
+
+
 def test_tool_uninstall_command_contains_superton(env: Path):
     from superton.cli import _tool_uninstall_command
 

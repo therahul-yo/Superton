@@ -1236,17 +1236,24 @@ def close_models(
 def _detect_install_method() -> str:
     """Best-effort sniff of how SuperTon was installed.
 
-    Looks at `sys.executable` because the running interpreter lives inside
-    the installer's venv — uv puts it under `…/uv/tools/superton/`, pipx
-    under `…/pipx/venvs/superton/`, plain pip in the user's site-packages
-    or a venv. Returns one of {"uv", "pipx", "pip", "unknown"}.
+    Inspects `sys.prefix` (the venv root) plus the raw `sys.executable`
+    string — not `Path(sys.executable).resolve()`. `uv tool install`
+    builds tool venvs whose `bin/python` is a *symlink* to the system
+    interpreter; `.resolve()` follows that symlink out of the tool dir
+    (e.g. to `/opt/homebrew/Cellar/python@3.12/...`) and the detection
+    falls through to `"pip"`. That cascade is what left
+    `~/.local/bin/superton` orphaned after `superton uninstall`
+    "succeeded".
+
+    Returns one of {"uv", "pipx", "pip"}.
     """
-    exe = Path(sys.executable).resolve()
-    text = str(exe)
-    if "/uv/tools/" in text or "uv\\tools\\" in text:
-        return "uv"
-    if "/pipx/" in text or "pipx\\" in text:
-        return "pipx"
+    candidates = (sys.prefix, sys.executable)
+    for raw in candidates:
+        text = str(raw)
+        if "/uv/tools/" in text or "uv\\tools\\" in text:
+            return "uv"
+        if "/pipx/" in text or "pipx\\" in text:
+            return "pipx"
     return "pip"
 
 
