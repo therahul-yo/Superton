@@ -29,6 +29,19 @@ That's it. If `uv run pytest` passes, you're set.
 - Docstrings on modules and public classes; comments only when the *why* is non-obvious
 - Conventional-ish commits: `feat:`, `fix:`, `docs:`, `chore:`
 
+## Brand & naming
+
+One canonical form per surface — keeps marketing copy, code, and docs aligned.
+
+| where | form | example |
+|---|---|---|
+| Marketing copy, README, docs, posts | **`SuperTon`** (CamelCase) | "SuperTon ingests…" |
+| CLI binary + Python package | `superton` (lowercase) | `superton init`, `from superton import …` |
+| Env vars | `SUPERTON_` (uppercase) | `SUPERTON_HOME`, `SUPERTON_THEME` |
+| GitHub repo slug | `Superton` (proper case) | `github.com/therahul-yo/Superton` (locked by URL — don't rename) |
+
+If you're writing prose and not sure: it's almost always `SuperTon`.
+
 ## PR checklist
 
 - [ ] Tests pass: `uv run pytest`
