@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 once it reaches 1.0.0. Until then, every minor bump may include breaking
 changes — they are called out in the **Breaking** section.
 
+## [0.3.0-beta.1] — 2026-05-23
+
+First **beta** release — graduation from "production-grade alpha" to
+something I'm comfortable recommending people install on their own
+machines without hand-holding. The 0.2.0 alpha shipped the bones of the
+product; this beta lands the install-to-first-success polish, the
+retrieval performance work, and the actually-clean uninstall that the
+alpha promised but didn't quite deliver.
+
+### Highlights
+
+- **Tri-color install palette + Miniton loading animation.** The init
+  flow now uses orange / yellow / red / purple as a self-contained
+  signal vocabulary — orange for forward motion, yellow for warnings,
+  red for hard failure, purple for the affirmative "fits" RAM chip. The
+  REPL's gap between `Enter` and the first streamed token now fills
+  with a `searching palace…` spinner during retrieval and a Rich dots
+  `thinking…` spinner during time-to-first-token, animated on a daemon
+  thread so the UI keeps ticking while `model.generate()` blocks.
+- **First-run onboarding rewrite.** `install.sh` gets ANSI colour, a
+  `--dry-run` preflight, and existing-install detection. `superton
+  init` shows that `^C` is safe, offers a 3-drawer demo seed, and
+  surfaces an "your palace is empty" hint instead of running an empty
+  retrieval. First REPL invocation shows a 2-line quick-start panel.
+- **Retrieval + model perf.** New `source_terms` table indexes path
+  tokens so `source_matches` and `_hoist_source_matches` hit an indexed
+  lookup instead of scanning + tokenising every distinct source per
+  call. `Model._tags` and `backend()` are cached with a 4-second TTL so
+  the daemon isn't hammered on every chat turn. Schema migration is
+  one-shot via `PRAGMA user_version`.
+- **New daily-workflow commands.** `superton note "..."` for quick
+  capture, `superton recent` / `superton today` for what landed in the
+  last week / day, and `superton sources --health` to spot missing
+  files or stuck semantic-index entries.
+- **Diagnostics + uninstall.** `superton doctor --json` for
+  machine-readable output. `superton errors.hint_for` distinguishes
+  "Ollama not installed" from "installed but daemon down". `superton
+  uninstall` now uses `subprocess.run` instead of `os.execvp` and
+  defensively sweeps `~/.local/share/uv/tools/superton` plus the bin
+  shim, so a follow-up `find ~ -iname '*superton*'` is genuinely
+  clean.
+- **TUI polish.** The footer now shows theme · model · drawer count so
+  the active state is visible at a glance.
+
+### Pill contrast fix (visible during init)
+
+The selected model-profile card (`● proton` by default) used to render
+as white-on-yellow — unreadable on most terminals. Unselected pills
+(`○ photon`, `○ neutron`) were dim white-on-grey50. `pill()` now uses
+the same dark-text-on-accent pattern for primary / secondary that
+success / warning / info already used, and the neutral pill background
+moves from `muted` (grey50) to `rule` (grey30) for sharper contrast.
+
+### New commands
+
+- `superton note <text> [--tag]` — quick text drawer without a file
+- `superton recent [--days N]` / `superton today` — sources by recency
+- `superton sources --health` — index + path-existence health
+- `superton demo` — seed a 3-drawer demo palace
+- `superton doctor --json` — machine-readable diagnostics
+
+### Tests
+
+218 tests pass under `pytest --ignore=tests/test_tui.py`. New coverage
+for the orphan-sweep paths in `uninstall`, the `source_terms` backfill
+gate, the cached-tags model behaviour, the empty-palace `ask` short
+circuit, the `today` command, and the install-flow purple chip.
+
+### Migration
+
+- `pyproject.toml` version bumped `0.2.0` → `0.3.0b1`; classifier
+  flipped from `Development Status :: 3 - Alpha` to
+  `Development Status :: 4 - Beta`.
+- Existing palaces upgrade in place — the new `source_terms` table is
+  created lazily and back-filled once per palace via a `PRAGMA
+  user_version` gate.
+- `INSTALL_GREEN` is still exported but now aliases `INSTALL_PURPLE`
+  instead of `INSTALL_ORANGE`; legacy callers keep working.
+
 ## [0.2.0] — 2026-05-22
 
 The "production-grade alpha" release. SuperTon goes from a thoughtful

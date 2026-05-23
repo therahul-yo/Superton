@@ -1,6 +1,6 @@
 [project]
 name = "superton"
-version = "0.2.0"
+version = "0.3.0b1"
 description = "A tiny local LLM with infinite memory. Your second brain that never forgets."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -8,7 +8,7 @@ authors = [{ name = "Rahul" }]
 requires-python = ">=3.11"
 keywords = ["llm", "local", "memory", "rag", "ollama", "knowledge-base", "second-brain"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
