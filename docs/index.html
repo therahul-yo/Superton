@@ -166,7 +166,7 @@ section:last-of-type{border-bottom:0}
   <div class="caption">
     <div><b>fig. 01</b>the palace</div>
     <div class="title">at the edge of forgetting</div>
-    <div><b>v0.1.0</b>alpha · local</div>
+    <div><b>v0.3.0b1</b>beta · local</div>
   </div>
 </aside>
 
@@ -177,14 +177,17 @@ section:last-of-type{border-bottom:0}
   <nav class="topnav">
     <a href="#install">01 · install</a>
     <a href="#session">02 · session</a>
-    <a href="#tenets">03 · tenets</a>
+    <a href="#capabilities">03 · capabilities</a>
+    <a href="#performance">04 · performance</a>
+    <a href="#tenets">05 · tenets</a>
+    <a href="#roadmap">06 · roadmap</a>
     <a href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">github →</a>
   </nav>
 
   <div class="right-inner" id="top">
 
     <header class="hero">
-      <div class="eyebrow reveal in"><span class="dot"></span>v0.1.0 · alpha · local-only</div>
+      <div class="eyebrow reveal in"><span class="dot"></span>v0.3.0-beta.1 · local-only · 231 tests passing</div>
       <h1 class="title reveal in d1">A local <em>memory palace</em>. For everything you scattered.</h1>
       <p class="tagline reveal in d2">SuperTon ingests your notes, PDFs, and AI-chat transcripts into a verbatim store, then a tiny local model answers your questions — grounded only in what you've fed it. <em>Nothing leaves your laptop.</em></p>
       <div class="cta reveal in d3">
@@ -228,6 +231,62 @@ section:last-of-type{border-bottom:0}
       </div>
     </section>
 
+    <section id="capabilities">
+      <div class="section-label reveal">Capabilities</div>
+      <h2 class="section-title reveal d1">What's already in the box.</h2>
+      <div class="tenets">
+        <div class="tenet reveal">
+          <div class="n">I.</div>
+          <div>
+            <h3>Multi-source ingest.</h3>
+            <p>PDFs, markdown, code, and AI-chat transcripts from Claude Code, ChatGPT, Cursor, and Amp. One add command, one verbatim store.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d1">
+          <div class="n">II.</div>
+          <div>
+            <h3>Semantic + lexical search.</h3>
+            <p>Hybrid retrieval via MemPalace with a SQLite FTS fallback. Every answer footers with the drawer IDs it cited — refusal over confabulation when the palace is silent.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d2">
+          <div class="n">III.</div>
+          <div>
+            <h3>MCP-ready out of the box.</h3>
+            <p>superton mcp serve exposes 29 tools over stdio so Claude Code, Cursor, and Gemini CLI can read and write your palace directly — no copy-paste round-trips.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d3">
+          <div class="n">IV.</div>
+          <div>
+            <h3>Three Miniton profiles.</h3>
+            <p><em>photon</em> — qwen3.5:0.8b, 4 GB RAM, runs anywhere. <em>proton</em> — qwen3.5:4b, 8 GB, balanced everyday default. <em>neutron</em> — qwen3.5:9b, 14 GB, best local quality. Switch with superton model.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="performance">
+      <div class="section-label reveal">Performance</div>
+      <h2 class="section-title reveal d1">Fast enough to forget the spinner.</h2>
+      <p class="tagline reveal d1">Measured on Apple M4 MacBook Air (16 GB) with 2,000 synthetic drawers. Re-run via <a href="https://github.com/therahul-yo/Superton/blob/main/scripts/bench.py" target="_blank" rel="noreferrer">scripts/bench.py</a>.</p>
+      <div class="terminal reveal d2">
+        <div class="titlebar">
+          <div class="lights"><span></span><span></span><span></span></div>
+          <div class="where">~/superton · bench</div>
+        </div>
+        <div class="body"><span class="c"># benchmark — apple m4 macbook air, 16 gb
+</span><span class="a">CLI cold start (superton --version)   </span><span class="cite">~87 ms
+</span><span class="a">Ingest throughput                     </span><span class="cite">~11,500 drawers/sec
+</span><span class="a">Retrieval latency p50 / p95           </span><span class="cite">0.99 ms / 1.10 ms
+</span><span class="a">Storage per drawer                    </span><span class="cite">~840 bytes (SQLite + FTS)
+</span><span class="a">Test suite                            </span><span class="cite">231 passing, mypy-strict core
+</span><span class="c">
+# first-token latency depends on your ollama setup and base
+# model — typically ~2 s on M4 with qwen3.5:0.8b.</span></div>
+      </div>
+    </section>
+
     <section id="tenets">
       <div class="section-label reveal">Tenets</div>
       <h2 class="section-title reveal d1">Three opinions, kept honest.</h2>
@@ -251,6 +310,48 @@ section:last-of-type{border-bottom:0}
           <div>
             <h3>Local until proven otherwise.</h3>
             <p>No API keys. No telemetry. No SaaS dependency. The palace lives on your laptop; the model lives in your Ollama.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap">
+      <div class="section-label reveal">Roadmap</div>
+      <h2 class="section-title reveal d1">Where it's going.</h2>
+      <div class="tenets">
+        <div class="tenet reveal">
+          <div class="n">✓</div>
+          <div>
+            <h3>Phase 1 — Foundation.</h3>
+            <p>Palace, ingest, ask, lexical + semantic search, importers, themes, streaming citations, multi-turn REPL, mcp serve, dedup. Shipped.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d1">
+          <div class="n">✓</div>
+          <div>
+            <h3>Phase 1.5 — Hardening.</h3>
+            <p>Structured logging, typed errors with recovery hints, mypy-strict core, 231-test suite, Linux + macOS CI on Python 3.11 and 3.12. Shipped.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d2">
+          <div class="n">→</div>
+          <div>
+            <h3>Phase 2 — Knowledge graph. <em>(current)</em></h3>
+            <p>timeline and entities commands, batched ingest via the MemPalace miner, OCR fallback for image PDFs, file watcher, export / import-palace / sync.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d3">
+          <div class="n">·</div>
+          <div>
+            <h3>Phase 3 — Reach.</h3>
+            <p>Gemini importer, browser extension, JSON output mode, packaging polish.</p>
+          </div>
+        </div>
+        <div class="tenet reveal d4">
+          <div class="n">·</div>
+          <div>
+            <h3>Phase 4 — Evolve.</h3>
+            <p>evolve — a LoRA fine-tune that learns the voice and vocabulary inside your drawers. Web UI.</p>
           </div>
         </div>
       </div>
