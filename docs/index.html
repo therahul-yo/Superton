@@ -177,10 +177,7 @@ section:last-of-type{border-bottom:0}
   <nav class="topnav">
     <a href="#install">01 · install</a>
     <a href="#session">02 · session</a>
-    <a href="#capabilities">03 · capabilities</a>
-    <a href="#performance">04 · performance</a>
-    <a href="#tenets">05 · tenets</a>
-    <a href="#roadmap">06 · roadmap</a>
+    <a href="#tenets">03 · tenets</a>
     <a href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">github →</a>
   </nav>
 
@@ -191,7 +188,7 @@ section:last-of-type{border-bottom:0}
       <h1 class="title reveal in d1">A local <em>memory palace</em>. For everything you scattered.</h1>
       <p class="tagline reveal in d2">SuperTon ingests your notes, PDFs, and AI-chat transcripts into a verbatim store, then a tiny local model answers your questions — grounded only in what you've fed it. <em>Nothing leaves your laptop.</em></p>
       <div class="cta reveal in d3">
-        <button class="btn primary" onclick="copyCmd('uv tool install \'git+https://github.com/therahul-yo/Superton.git\'', this)">
+        <button class="btn primary" onclick="copyCmd('uv tool install superton', this)">
           <span class="prompt">$</span>uv tool install superton
         </button>
         <a class="btn" href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">GitHub →</a>
@@ -204,7 +201,7 @@ section:last-of-type{border-bottom:0}
       <div class="steps">
         <div class="step reveal">
           <div class="label"><b>01</b>Install SuperTon</div>
-          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="uv tool install 'git+https://github.com/therahul-yo/Superton.git'"><span class="prompt">$</span><span>uv tool install 'git+https://github.com/therahul-yo/Superton.git'</span><span class="copy">copy</span></div>
+          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="uv tool install superton"><span class="prompt">$</span><span>uv tool install superton</span><span class="copy">copy</span></div>
           <div class="note">Requires <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a>. Or clone the repo and run <code>uv run superton</code>.</div>
         </div>
         <div class="step reveal d1">
@@ -310,48 +307,6 @@ section:last-of-type{border-bottom:0}
           <div>
             <h3>Local until proven otherwise.</h3>
             <p>No API keys. No telemetry. No SaaS dependency. The palace lives on your laptop; the model lives in your Ollama.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="roadmap">
-      <div class="section-label reveal">Roadmap</div>
-      <h2 class="section-title reveal d1">Where it's going.</h2>
-      <div class="tenets">
-        <div class="tenet reveal">
-          <div class="n">✓</div>
-          <div>
-            <h3>Phase 1 — Foundation.</h3>
-            <p>Palace, ingest, ask, lexical + semantic search, importers, themes, streaming citations, multi-turn REPL, mcp serve, dedup. Shipped.</p>
-          </div>
-        </div>
-        <div class="tenet reveal d1">
-          <div class="n">✓</div>
-          <div>
-            <h3>Phase 1.5 — Hardening.</h3>
-            <p>Structured logging, typed errors with recovery hints, mypy-strict core, 231-test suite, Linux + macOS CI on Python 3.11 and 3.12. Shipped.</p>
-          </div>
-        </div>
-        <div class="tenet reveal d2">
-          <div class="n">→</div>
-          <div>
-            <h3>Phase 2 — Knowledge graph. <em>(current)</em></h3>
-            <p>timeline and entities commands, batched ingest via the MemPalace miner, OCR fallback for image PDFs, file watcher, export / import-palace / sync.</p>
-          </div>
-        </div>
-        <div class="tenet reveal d3">
-          <div class="n">·</div>
-          <div>
-            <h3>Phase 3 — Reach.</h3>
-            <p>Gemini importer, browser extension, JSON output mode, packaging polish.</p>
-          </div>
-        </div>
-        <div class="tenet reveal d4">
-          <div class="n">·</div>
-          <div>
-            <h3>Phase 4 — Evolve.</h3>
-            <p>evolve — a LoRA fine-tune that learns the voice and vocabulary inside your drawers. Web UI.</p>
           </div>
         </div>
       </div>
