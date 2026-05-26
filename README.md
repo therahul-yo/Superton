@@ -125,7 +125,7 @@ The interesting choices, with the tradeoffs called out:
   `SUPERTON_LOG_JSON=1`), typed errors that map known exceptions to
   one-line recovery hints, mypy-strict on the core modules
   (`memory`, `model`, `config`, `chat`, `errors`, `logging`, `ingest`),
-  and a 187-test suite at ~50 % coverage gating CI on Linux + macOS ×
+  and a 231-test suite at ~50 % coverage gating CI on Linux + macOS ×
   Python 3.11 + 3.12.
 
 ## Tech stack
@@ -468,7 +468,7 @@ sane defaults and log a warning rather than crashing.
 
 ```bash
 uv sync --extra dev
-uv run pytest                       # 187 tests, ~50% coverage
+uv run pytest                       # 231 tests, ~50% coverage
 uv run pytest --cov=superton --cov-fail-under=45
 uv run mypy superton                # strict on core modules
 uv run ruff check .
@@ -485,7 +485,7 @@ superton doctor
   source-filename hoist re-rank, themes, streaming answers with citations,
   staged init, `mcp serve`, `dedup`, multi-turn REPL ✅
 - **Phase 1.5** — production hardening: structured logging, typed errors
-  with recovery hints, mypy-strict core, 187-test suite, Linux+macOS CI,
+  with recovery hints, mypy-strict core, 231-test suite, Linux+macOS CI,
   UI polish pass (verb-cycling spinners, cards, pills, diff refresh) ✅
 - **Phase 2** *(current)* — `timeline` / `entities` via MemPalace knowledge
   graph, batched ingest via `mempalace.miner`, OCR fallback for image PDFs,
