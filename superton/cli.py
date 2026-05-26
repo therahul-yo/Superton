@@ -1425,7 +1425,10 @@ def uninstall(
         with ui.stage("removing superton CLI", step=step, total=total_steps):
             ui.hint(" ".join(tool_cmd))
             try:
-                result = subprocess.run(
+                # Distinct name from the bytes-returning `result` used in
+                # the ollama-rm branch above so mypy can pick the
+                # `CompletedProcess[str]` overload here without a clash.
+                proc = subprocess.run(
                     tool_cmd,
                     check=False,
                     capture_output=True,
@@ -1440,12 +1443,12 @@ def uninstall(
                     hint="cleanup will still try to remove orphan files",
                 )
             else:
-                stderr = (result.stderr or "").strip()
-                if result.returncode == 0:
+                stderr = (proc.stderr or "").strip()
+                if proc.returncode == 0:
                     ui.stage_ok(f"{install_method} reported uninstall")
                 else:
                     ui.stage_warn(
-                        f"{install_method} exited {result.returncode}",
+                        f"{install_method} exited {proc.returncode}",
                         hint=stderr or "see output above",
                     )
 
