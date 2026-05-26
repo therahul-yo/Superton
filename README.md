@@ -1,41 +1,62 @@
-![SuperTon black hole hero](docs/assets/superton-hero.png)
+<p align="center">
+  <img src="docs/assets/superton-hero.png" alt="SuperTon black hole hero" width="720">
+</p>
 
-# SuperTon
+<h1 align="center">SuperTon</h1>
 
-> A local memory palace for your scattered notes, docs, and AI chats — searchable, grounded, and 100% yours.
+<p align="center">
+  <b>A local memory palace for your scattered notes, docs, and AI chats.</b><br>
+  Searchable, grounded, citations — and 100% yours.
+</p>
 
-[![CI](https://github.com/therahul-yo/Superton/actions/workflows/ci.yml/badge.svg)](https://github.com/therahul-yo/Superton/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
-![License](https://img.shields.io/badge/license-Apache%202.0-green)
-![Status](https://img.shields.io/badge/status-alpha-orange)
+<p align="center">
+  <a href="https://github.com/therahul-yo/Superton/actions/workflows/ci.yml"><img src="https://github.com/therahul-yo/Superton/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue" alt="Python">
+  <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
+  <img src="https://img.shields.io/badge/status-beta-blue" alt="Status">
+  <img src="https://img.shields.io/badge/tests-231%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/macOS-first-black?logo=apple&logoColor=white" alt="macOS-first">
+</p>
 
-SuperTon is a CLI-first personal knowledge system. Feed it your notes, docs,
-PDFs, and conversations from other AI tools. It indexes everything verbatim
-into a **palace of memories**, then your tiny custom local model (`Miniton`)
-answers your questions grounded in what you've fed it.
-
-- 🕳 **Black hole memory** — drawers go in, nothing comes out warped, nothing is forgotten
-- 🧠 **Tiny local model** — Miniton, customizable via `Modelfile`
-- 🔒 **100% local** — no API keys, no cloud, no telemetry
-- 📚 **Verbatim storage** — original text preserved; nothing summarized away
-- 🔗 **Multi-source** — import from Claude Code, ChatGPT, Cursor, Amp
-- 🎨 **Four themes** — nebula, mono, solar, frost — production-feel CLI
-- 🔌 **MCP-ready** — one command exposes your palace to Claude Code, Cursor, and Gemini CLI
-- 🛠 **Production-grade** — structured logging, typed errors with recovery hints, mypy-strict core, 187 tests
-- 🪶 **Lightweight** — runs comfortably on a laptop
-
-## Demo
-
-> 🎬 **Demo video — recording soon.**
->
-> A short clip showing ingestion → grounded answer with citations → theme
-> switch will live at [`docs/assets/demo.gif`](docs/assets/demo.gif).
-> Until then, the snippet in [Quickstart](#quickstart) shows a real
-> session.
-
-<!-- After recording, replace the block above with:
-![SuperTon demo](docs/assets/demo.gif)
+<!-- Demo GIF lands here once recorded. See `docs/RECORDING.md` for the script + ffmpeg pipeline.
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="SuperTon — install to first cited answer in 60 seconds" width="720">
+</p>
 -->
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh
+superton init                    # set up palace + Miniton (~2 min, one-time)
+superton add ~/Documents/notes   # ingest a folder
+superton                         # start chatting with cited answers
+```
+
+**SuperTon** ingests your PDFs, notes, code, and AI-tool transcripts into a single
+local knowledge base. A tiny custom local model (`Miniton`) answers your questions
+grounded in *your* data — with citations. No cloud. No API keys. No telemetry.
+
+- 🧠 **Verbatim storage** — original text preserved; never summarized away
+- 🔒 **Local-first** — SQLite + Ollama on your machine; works offline
+- 📎 **Cited answers** — every reply footers with the drawers it pulled from
+- 🔗 **Multi-source ingest** — PDFs, markdown, code, Claude Code / ChatGPT / Cursor / Amp transcripts
+- 🔌 **MCP-ready** — expose your palace to Claude Code, Cursor, or Gemini CLI with one command
+
+## Performance
+
+Measured on Apple M1 (16 GB) with 2 000 synthetic drawers. Re-run via
+[`scripts/bench.py`](scripts/bench.py):
+
+| metric | value |
+|---|---|
+| CLI cold start (`superton --version`) | **~87 ms** |
+| Ingest throughput | **~11 500 drawers/sec** |
+| Retrieval latency p50 / p95 | **0.99 ms / 1.10 ms** |
+| Storage per drawer | **~840 bytes** (SQLite + FTS) |
+| Test suite | **231 passing**, mypy-strict core |
+
+First-token latency from Miniton itself depends on your Ollama setup and base
+model — typically ~2 s on M1 with `qwen3.5:0.8b`. Streaming starts as soon as the
+first token is decoded.
 
 ## Why I built this
 
