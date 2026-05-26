@@ -43,7 +43,7 @@ grounded in *your* data — with citations. No cloud. No API keys. No telemetry.
 
 ## Performance
 
-Measured on Apple M1 (16 GB) with 2 000 synthetic drawers. Re-run via
+Measured on Apple M4 MacBook Air (16 GB) with 2 000 synthetic drawers. Re-run via
 [`scripts/bench.py`](scripts/bench.py):
 
 | metric | value |
@@ -55,7 +55,7 @@ Measured on Apple M1 (16 GB) with 2 000 synthetic drawers. Re-run via
 | Test suite | **231 passing**, mypy-strict core |
 
 First-token latency from Miniton itself depends on your Ollama setup and base
-model — typically ~2 s on M1 with `qwen3.5:0.8b`. Streaming starts as soon as the
+model — typically ~2 s on M4 MacBook Air with `qwen3.5:0.8b`. Streaming starts as soon as the
 first token is decoded.
 
 ## Why I built this
