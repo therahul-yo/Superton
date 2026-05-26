@@ -184,12 +184,12 @@ section:last-of-type{border-bottom:0}
   <div class="right-inner" id="top">
 
     <header class="hero">
-      <div class="eyebrow reveal in"><span class="dot"></span>v0.3.0-beta.1 · local-only · 231 tests passing</div>
+      <div class="eyebrow reveal in"><span class="dot"></span>v0.3.0-beta.1 · local-only</div>
       <h1 class="title reveal in d1">A local <em>memory palace</em>. For everything you scattered.</h1>
       <p class="tagline reveal in d2">SuperTon ingests your notes, PDFs, and AI-chat transcripts into a verbatim store, then a tiny local model answers your questions — grounded only in what you've fed it. <em>Nothing leaves your laptop.</em></p>
       <div class="cta reveal in d3">
-        <button class="btn primary" onclick="copyCmd('uv tool install superton', this)">
-          <span class="prompt">$</span>uv tool install superton
+        <button class="btn primary" onclick="copyCmd('curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh', this)">
+          <span class="prompt">$</span>curl install.sh | sh
         </button>
         <a class="btn" href="https://github.com/therahul-yo/Superton" target="_blank" rel="noreferrer">GitHub →</a>
       </div>
@@ -201,8 +201,8 @@ section:last-of-type{border-bottom:0}
       <div class="steps">
         <div class="step reveal">
           <div class="label"><b>01</b>Install SuperTon</div>
-          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="uv tool install superton"><span class="prompt">$</span><span>uv tool install superton</span><span class="copy">copy</span></div>
-          <div class="note">Requires <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a>. Or clone the repo and run <code>uv run superton</code>.</div>
+          <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh"><span class="prompt">$</span><span>curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh</span><span class="copy">copy</span></div>
+          <div class="note">Requires Python 3.11+. The installer pulls <a href="https://docs.astral.sh/uv/" target="_blank" rel="noreferrer">uv</a> if missing, then installs SuperTon as a uv tool. Alternative: <code>uv tool install superton</code> from PyPI, or clone the repo and run <code>uv run superton</code>.</div>
         </div>
         <div class="step reveal d1">
           <div class="label"><b>02</b>Initialize the palace</div>
