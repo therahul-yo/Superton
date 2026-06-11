@@ -116,12 +116,8 @@ def test_theme_unknown_rejected(env: Path):
 def test_theme_list_shows_active(env: Path):
     result = CliRunner().invoke(app, ["theme"])
     assert result.exit_code == 0
-    assert "nebula" in result.stdout
+    assert "ember" in result.stdout
 
-
-def test_model_profile_unknown_rejected(env: Path):
-    result = CliRunner().invoke(app, ["model", "huge"])
-    assert result.exit_code == 1
 
 
 def test_doctor_runs(env: Path):
@@ -180,7 +176,7 @@ def test_ask_empty_palace_suggests_demo(env: Path, monkeypatch):
 def test_uninstall_removes_data_when_confirmed(env: Path, monkeypatch):
     monkeypatch.setattr("superton.cli.shutil.which", lambda name: None)
     (env / "palace").mkdir(parents=True)
-    (env / "config.toml").write_text('theme = "mono"\n', encoding="utf-8")
+    (env / "config.toml").write_text('theme = "ash"\n', encoding="utf-8")
 
     # --keep-tool prevents the test runner from being execvp'd into oblivion.
     result = CliRunner().invoke(app, ["uninstall", "--yes", "--keep-models", "--keep-tool"])
@@ -334,11 +330,11 @@ def test_uninstall_model_names_include_dependencies_by_default(env: Path):
 
     cfg = Config.load()
     assert _uninstall_model_names(cfg, models=True, all_models=True) == [
-        "miniton",
-        "qwen3.5:4b",
+        "superton",
+        "openbmb/minicpm5",
         "nomic-embed-text",
     ]
-    assert _uninstall_model_names(cfg, models=True, all_models=False) == ["miniton"]
+    assert _uninstall_model_names(cfg, models=True, all_models=False) == ["superton"]
 
 
 def test_init_shows_preflight_card(env: Path):
@@ -357,10 +353,6 @@ def test_init_rejects_unknown_theme_fast(env: Path):
     result = CliRunner().invoke(app, ["init", "--no-model", "-y", "--theme", "neopunk"])
     assert result.exit_code == 1
 
-
-def test_init_rejects_unknown_profile_fast(env: Path):
-    result = CliRunner().invoke(app, ["init", "--no-model", "-y", "--model", "huge"])
-    assert result.exit_code == 1
 
 
 def test_detect_preflight_marks_existing_palace(env: Path, tmp_path: Path):

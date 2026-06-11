@@ -12,7 +12,7 @@ Design goals:
 Themes are chosen by, in order:
   1. `SUPERTON_THEME` environment variable
   2. `theme = "..."` in the persisted config file
-  3. the built-in default `nebula`
+  3. the built-in default `ember`
 """
 
 from __future__ import annotations
@@ -63,78 +63,88 @@ class Theme:
     prompt: str
     prompt_glyph: str
     bullet: str
+    spinner: str = "dots"
+    rule_char: str = "─"
 
 
 # Four hand-tuned themes. Colors are hex where we want fine control and
 # named rich colors (e.g. "grey50") where terminal remapping is desirable.
 THEMES: dict[str, Theme] = {
-    "nebula": Theme(
-        name="nebula",
-        label="amber + violet · default",
-        primary="#FFD93D",
-        secondary="#87D1FF",
-        muted="grey50",
-        success="#7FE79B",
-        warning="#FFB02E",
-        error="#F0471F",
-        info="#87D1FF",
-        neutral="white",
-        rule="grey30",
-        prompt="#FFD93D",
-        prompt_glyph="❍",
-        bullet="›",
+    "ember": Theme(
+        name="ember",
+        label="burnt orange · embers on black",
+        primary="#FF7A1A",
+        secondary="#FFB347",
+        muted="grey42",
+        success="#FFA94D",
+        warning="#FFB347",
+        error="#FF3B30",
+        info="#FFD9A8",
+        neutral="#F5E9DC",
+        rule="grey23",
+        prompt="#FF7A1A",
+        prompt_glyph="◉",
+        bullet="▸",
+        spinner="dots",
+        rule_char="─",
     ),
-    "mono": Theme(
-        name="mono",
-        label="monochrome · bold only",
+    "crimson": Theme(
+        name="crimson",
+        label="blood red · dark and sharp",
+        primary="#E63946",
+        secondary="#FF8FA3",
+        muted="grey42",
+        success="#F4A261",
+        warning="#FF7A1A",
+        error="#FF1F3D",
+        info="#FFB3C1",
+        neutral="#F2E6E6",
+        rule="#4A1620",
+        prompt="#E63946",
+        prompt_glyph="✦",
+        bullet="›",
+        spinner="line",
+        rule_char="·",
+    ),
+    "void": Theme(
+        name="void",
+        label="dark violet · deep space",
+        primary="#9D6BFF",
+        secondary="#C9A8FF",
+        muted="#6B5C8A",
+        success="#B58CFF",
+        warning="#FF9E4D",
+        error="#FF4D6D",
+        info="#C9A8FF",
+        neutral="#EDE6FA",
+        rule="#352A52",
+        prompt="#9D6BFF",
+        prompt_glyph="◈",
+        bullet="›",
+        spinner="dots12",
+        rule_char="╌",
+    ),
+    "ash": Theme(
+        name="ash",
+        label="white on black · stark mono",
         primary="bold white",
-        secondary="bold grey70",
-        muted="grey50",
+        secondary="grey74",
+        muted="grey46",
         success="bold white",
-        warning="bold grey82",
-        error="bold red",
-        info="bold grey82",
+        warning="#FF7A1A",
+        error="bold #FF3B30",
+        info="grey82",
         neutral="white",
-        rule="grey30",
+        rule="grey27",
         prompt="bold white",
         prompt_glyph="›",
         bullet="·",
-    ),
-    "solar": Theme(
-        name="solar",
-        label="warm amber · sunrise",
-        primary="#FFB02E",
-        secondary="#FFD37A",
-        muted="#8C6F2A",
-        success="#FFD37A",
-        warning="#FFB02E",
-        error="#E04A1F",
-        info="#FFEAB2",
-        neutral="#FFEFCC",
-        rule="#6B531F",
-        prompt="#FFB02E",
-        prompt_glyph="◉",
-        bullet="▸",
-    ),
-    "frost": Theme(
-        name="frost",
-        label="cool cyan · arctic",
-        primary="#87D1FF",
-        secondary="#B7E4FF",
-        muted="#5C7A94",
-        success="#7FE7C1",
-        warning="#FFD37A",
-        error="#F98B9B",
-        info="#87D1FF",
-        neutral="#E8F2FF",
-        rule="#3E5569",
-        prompt="#87D1FF",
-        prompt_glyph="◇",
-        bullet="›",
+        spinner="line",
+        rule_char="─",
     ),
 }
 
-DEFAULT_THEME = "nebula"
+DEFAULT_THEME = "ember"
 
 
 def _resolve_theme_name() -> str:
@@ -244,7 +254,18 @@ def blank() -> None:
 
 
 def rule(title: str | None = None) -> None:
-    _console.rule(title or "", style=_current.rule)
+    """Two-tone gradient rule: bright near the left edge, fading into the
+    theme's rule color. Gives each theme a distinctive horizontal line."""
+    width = max(_console.width, 20)
+    char = _current.rule_char
+    head = max(6, width // 6)
+    line = Text()
+    line.append(char * head, style=_current.primary)
+    if title:
+        line.append(f" {title} ", style=f"bold {_current.primary}")
+        head += len(title) + 2
+    line.append(char * max(0, width - head), style=_current.rule)
+    _console.print(line)
 
 
 def section(title: str, subtitle: str | None = None, *, sweep: bool = True) -> None:
@@ -357,7 +378,7 @@ def spinner(
         return
 
     phase_list = list(phases) if phases else None
-    with _console.status(f"[{_current.muted}]{label}[/]", spinner="dots") as status:
+    with _console.status(f"[{_current.muted}]{label}[/]", spinner=_current.spinner, spinner_style=_current.primary) as status:
         stop = threading.Event()
         cycler: threading.Thread | None = None
         if phase_list:
@@ -421,7 +442,7 @@ def status_pills(cfg: Any, stats: dict[str, Any]) -> Text:
     row = Text()
     row.append_text(pill(_current.name, kind="primary"))
     row.append("  ")
-    row.append_text(pill(f"miniton:{cfg.model_profile}", kind="secondary"))
+    row.append_text(pill(cfg.model, kind="secondary"))
     row.append("  ")
     row.append_text(pill(f"palace · {stats.get('drawers', 0)}", kind="neutral"))
     if stats.get("semantic_error"):
@@ -451,7 +472,7 @@ def card(
         title_text.append_text(pill(label, kind=kind))
 
     if isinstance(body, str):
-        body_renderable: Any = Text(body)
+        body_renderable: Any = Text.from_markup(body)
     else:
         body_renderable = body
 
@@ -739,8 +760,8 @@ def header(cfg, stats: dict, cwd: Path | None = None) -> None:
     body.append(f"v{__version__}\n", style=_current.muted)
     body.append("\n")
     body.append("model   ", style=_current.muted)
-    body.append("Miniton ", style="bold")
-    body.append(f"{cfg.model_profile} · {cfg.base_model}\n", style=_current.muted)
+    body.append("Superton ", style="bold")
+    body.append(f"{cfg.model} · {cfg.base_model}\n", style=_current.muted)
     body.append("memory  ", style=_current.muted)
     body.append("palace  ", style="bold")
     body.append(
@@ -907,8 +928,12 @@ def stage(title: str, *, step: int | None = None, total: int | None = None):
     layout for back-compat with callers that don't track step counts.
     """
     if step is not None and total is not None:
+        dots = (
+            f"[{INSTALL_ORANGE}]{'●' * step}[/]"
+            f"[{_current.rule}]{'○' * max(0, total - step)}[/]"
+        )
         header = (
-            f"[{INSTALL_ORANGE}]→[/] "
+            f"[{INSTALL_ORANGE}]→[/] {dots} "
             f"[{_current.muted}][{step}/{total}][/] {title}"
         )
     else:
@@ -926,7 +951,18 @@ def stage_ok(msg: str) -> None:
 
     The ✓ glyph carries the positive signal; colour stays in the orange
     family so the install flow keeps its bicolor (orange + red) palette.
+    On a TTY the tick lands with a 3-frame pulse (dim → bright → settled)
+    so each completed stage registers as a micro-interaction.
     """
+    if _console.is_terminal:
+        frames = [_current.muted, f"bold {INSTALL_ORANGE}", INSTALL_ORANGE]
+        with Live(Text(f"  ✓ {msg}"), console=_console, refresh_per_second=30, transient=True) as live:
+            for st in frames:
+                t = Text("  ")
+                t.append("✓", style=st)
+                t.append(f" {msg}")
+                live.update(t)
+                time.sleep(0.035)
     _console.print(f"  [{INSTALL_ORANGE}]✓[/] {msg}")
 
 
@@ -1079,47 +1115,76 @@ def ready_card(cfg, stats: dict) -> None:
     _console.print(Text(f"{cfg.palace_dir}", style=_current.muted), soft_wrap=True)
 
 
-def profile_card(
-    name: str,
-    *,
-    base_model: str,
-    download_gb: float,
-    min_ram_gb: int,
-    label: str,
-    ram_gb: float | None,
-    selected: bool,
-) -> None:
-    """One model-profile card used by the init picker.
+def pick_theme_interactive(default: str) -> str | None:
+    """Arrow-key theme picker: ↑/↓ (or j/k) to move, Enter to select.
 
-    Stacks a header pill (active marker + profile name + base model),
-    a RAM-fit bar, and the human description. Cards are visually
-    distinguishable at a glance — easier than reading a table.
+    Repaints the theme list in place and live-previews the highlighted
+    theme's colors. Returns the chosen theme name, or None when stdin
+    isn't a real TTY (caller falls back to a typed prompt).
     """
-    marker_pill = pill(
-        f"● {name}" if selected else f"○ {name}",
-        kind="primary" if selected else "neutral",
-    )
-    header = Text()
-    header.append_text(marker_pill)
-    header.append("  ")
-    header.append(base_model, style=_current.muted)
-    header.append("    ")
-    header.append(f"~{download_gb:.1f} GB download", style=_current.muted)
+    import sys
 
-    bar = ram_bar(ram_gb, float(min_ram_gb))
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return None
+    try:
+        import termios
+        import tty
+    except ImportError:
+        return None
 
-    note = Text(label, style=_current.muted)
+    names = list(THEMES)
+    idx = names.index(default) if default in THEMES else 0
+    n = len(names)
 
-    body = Group(header, bar, note)
-    _console.print(
-        Panel(
-            body,
-            border_style=INSTALL_ORANGE if selected else _current.rule,
-            padding=(0, 1),
-            expand=False,
-            box=box.ROUNDED,
-        )
-    )
+    def draw(first: bool = False) -> None:
+        if not first:
+            sys.stdout.write(f"\x1b[{n + 1}A\r")
+        for i, name in enumerate(names):
+            t = THEMES[name]
+            marker = "●" if i == idx else "○"
+            row_style = f"bold {t.primary}" if i == idx else _current.muted
+            swatch = (
+                f"[{t.primary}]██[/] [{t.secondary}]██[/] "
+                f"[{t.success}]✓[/] [{t.warning}]![/] [{t.error}]✗[/]"
+            )
+            _console.print(
+                f"  [{row_style}]{marker} {name:<9}[/] {swatch}  "
+                f"[{_current.muted}]{t.label}[/]"
+            )
+        _console.print(f"  [{_current.muted}]↑/↓ move · enter select[/]")
+
+    fd = sys.stdin.fileno()
+    old_attrs = termios.tcgetattr(fd)
+    sys.stdout.write("\x1b[?25l")
+    try:
+        tty.setcbreak(fd)
+        draw(first=True)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":
+                seq = sys.stdin.read(2)
+                if seq == "[A":
+                    idx = (idx - 1) % n
+                elif seq == "[B":
+                    idx = (idx + 1) % n
+                else:
+                    continue
+            elif ch in ("k", "K"):
+                idx = (idx - 1) % n
+            elif ch in ("j", "J"):
+                idx = (idx + 1) % n
+            elif ch in ("\r", "\n"):
+                return names[idx]
+            elif ch in ("\x03", "\x04", "q"):
+                return default
+            else:
+                continue
+            set_theme(names[idx])
+            draw()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        sys.stdout.write("\x1b[?25h")
+        sys.stdout.flush()
 
 
 def theme_picker_card(active: str) -> None:
@@ -1204,7 +1269,7 @@ def next_steps_card(cfg) -> None:
     body.append("palace   ", style=_current.muted)
     body.append(f"{cfg.palace_dir}\n", style=_current.muted)
     body.append("model    ", style=_current.muted)
-    body.append(f"Miniton · {cfg.model_profile} · {cfg.base_model}", style=_current.muted)
+    body.append(f"{cfg.model} · {cfg.base_model}", style=_current.muted)
 
     panel(body, title="ready", anchor=True)
 
@@ -1268,7 +1333,7 @@ def farewell_card(removed: list[tuple[str, str]], manual_step: str | None = None
     )
 
 
-def stream_answer(token_iter, label: str = "Miniton") -> str:
+def stream_answer(token_iter, label: str = "Superton") -> str:
     """Stream tokens live under a header. Returns the full answer string.
 
     Phases:

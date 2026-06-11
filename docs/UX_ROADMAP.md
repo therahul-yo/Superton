@@ -98,7 +98,7 @@
 ### AI quality
 
 - **`--reason` flag for `ask`** — Swap in DeepSeek R1 distill or QwQ just for that call when the question is multi-step. Default model stays terse Qwen 3.5.
-- **Self-verification step** — After Miniton answers, run a tiny "does the citation actually back this claim?" check on each cited drawer. Strip claims that fail.
+- **Self-verification step** — After Superton answers, run a tiny "does the citation actually back this claim?" check on each cited drawer. Strip claims that fail.
 - **Confidence bands per answer** — `superton ask --confidence` returns a 0–1 score per claim alongside the answer.
 - **Conversation summarization** — `/clear --summarize` writes the current conversation as a single drawer before resetting.
 
@@ -108,7 +108,7 @@
 |---|---|---|
 | **Voice input** | `superton ask --voice` uses whisper.cpp. Great for ambient capture while walking. | Whisper.cpp install is heavy; macOS-only Q1. |
 | **Browser extension** | A "save to palace" button on every page. | Maintenance burden of a JS codebase. |
-| **`superton evolve`** | LoRA fine-tune Miniton on the user's writing style from drawers. | Quality unpredictable on small datasets. |
+| **`superton evolve`** | LoRA fine-tune Superton on the user's writing style from drawers. | Quality unpredictable on small datasets. |
 | **Team palace** | Shared palace with optimistic conflict resolution. | Privacy is the brand — could undermine the local-first promise. |
 | **Web UI** | Browser-based variant of the CLI. | Two frontends to keep in sync. |
 

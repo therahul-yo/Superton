@@ -5,53 +5,21 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
 
 from platformdirs import user_data_dir
 
 from superton.logging import get_logger
 
 
-class ModelProfile(TypedDict):
-    base_model: str
-    hf_model: str
-    label: str
-    download_gb: float
-    min_ram_gb: int
-
 log = get_logger("config")
 
 VALID_BACKENDS = {"auto", "ollama", "huggingface"}
 VALID_MEMORY_BACKENDS = {"hybrid", "semantic", "mempalace", "sqlite"}
 
-# Profiles use particle-physics names to rhyme with the SuperTon / Miniton
-# vocabulary. All three pull Qwen 3.5 weights via Ollama:
-#   photon  → qwen3.5:0.8b   smallest, fastest, runs on any laptop
-#   proton  → qwen3.5:4b     balanced default for everyday use
-#   neutron → qwen3.5:9b     best local quality, wants real RAM
-MODEL_PROFILES: dict[str, ModelProfile] = {
-    "photon": {
-        "base_model": "qwen3.5:0.8b",
-        "hf_model": "Qwen/Qwen3.5-0.8B",
-        "label": "photon · 0.8B · lowest memory · runs anywhere",
-        "download_gb": 1.0,
-        "min_ram_gb": 4,
-    },
-    "proton": {
-        "base_model": "qwen3.5:4b",
-        "hf_model": "Qwen/Qwen3.5-4B",
-        "label": "proton · 4B · balanced · default for new installs",
-        "download_gb": 3.4,
-        "min_ram_gb": 8,
-    },
-    "neutron": {
-        "base_model": "qwen3.5:9b",
-        "hf_model": "Qwen/Qwen3.5-9B",
-        "label": "neutron · 9B · best local quality · needs 14+ GB RAM",
-        "download_gb": 6.6,
-        "min_ram_gb": 14,
-    },
-}
+# Single default model: MiniCPM5 (1B, 128K context) pulled via Ollama.
+DEFAULT_BASE_MODEL = "openbmb/minicpm5"
+DEFAULT_HF_MODEL = "openbmb/MiniCPM5-1B"
+BASE_MODEL_DOWNLOAD_GB = 0.7
 
 
 def detect_ram_gb() -> float | None:
@@ -108,36 +76,22 @@ def write_settings(home: Path, **updates: str) -> None:
 @dataclass(frozen=True)
 class Config:
     home: Path
-    model_profile: str = "proton"
-    model: str = "miniton"
-    base_model: str = "qwen3.5:4b"
+    model: str = "superton"
+    base_model: str = DEFAULT_BASE_MODEL
     model_backend: str = "auto"
-    hf_model: str = "Qwen/Qwen3.5-4B"
+    hf_model: str = DEFAULT_HF_MODEL
     embed_model: str = "nomic-embed-text"
     ollama_url: str = "http://127.0.0.1:11434"
     memory_backend: str = "hybrid"
     semantic_collection: str = "superton_drawers"
     offline: bool = True
-    theme: str = "nebula"
+    theme: str = "ember"
     first_repl_done: bool = False
 
     @classmethod
     def load(cls) -> Config:
         home = _home()
         settings = _read_settings(home / "config.toml")
-        profile = os.environ.get("SUPERTON_MODEL_PROFILE", settings.get("model_profile", "proton"))
-        # Migrate users coming from the pre-Qwen3.5 profile names.
-        _LEGACY_PROFILE_MAP = {"fast": "photon", "better": "proton", "strong": "neutron"}
-        if profile in _LEGACY_PROFILE_MAP:
-            log.warning(
-                "legacy profile %r → %r (Qwen 3.5 release renamed the tiers)",
-                profile, _LEGACY_PROFILE_MAP[profile],
-            )
-            profile = _LEGACY_PROFILE_MAP[profile]
-        if profile not in MODEL_PROFILES:
-            log.warning("unknown model_profile=%r, falling back to 'proton'", profile)
-            profile = "proton"
-        profile_defaults = MODEL_PROFILES[profile]
 
         model_backend_raw = os.environ.get(
             "SUPERTON_MODEL_BACKEND",
@@ -155,25 +109,24 @@ class Config:
             log.warning("unknown memory_backend=%r, falling back to 'hybrid'", memory_backend_raw)
             memory_backend_raw = "hybrid"
 
-        theme = os.environ.get("SUPERTON_THEME", settings.get("theme", "nebula"))
+        theme = os.environ.get("SUPERTON_THEME", settings.get("theme", "ember"))
         # ui.THEMES is the source of truth, but importing ui here would create
         # a load-order cycle. Whitelist the four shipped themes inline.
-        if theme not in {"nebula", "mono", "solar", "frost"}:
-            log.warning("unknown theme=%r, falling back to 'nebula'", theme)
-            theme = "nebula"
+        if theme not in {"ember", "crimson", "void", "ash"}:
+            log.warning("unknown theme=%r, falling back to 'ember'", theme)
+            theme = "ember"
 
         return cls(
             home=home,
-            model_profile=profile,
-            model=os.environ.get("SUPERTON_MODEL", settings.get("model", "miniton")),
+            model=os.environ.get("SUPERTON_MODEL", settings.get("model", "superton")),
             base_model=os.environ.get(
                 "SUPERTON_BASE_MODEL",
-                settings.get("base_model", profile_defaults["base_model"]),
+                settings.get("base_model", DEFAULT_BASE_MODEL),
             ),
             model_backend=model_backend_raw,
             hf_model=os.environ.get(
                 "SUPERTON_HF_MODEL",
-                settings.get("hf_model", profile_defaults["hf_model"]),
+                settings.get("hf_model", DEFAULT_HF_MODEL),
             ),
             ollama_url=os.environ.get("OLLAMA_HOST", settings.get("ollama_url", "http://127.0.0.1:11434")),
             memory_backend=memory_backend_raw,
