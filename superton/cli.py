@@ -1230,6 +1230,34 @@ def _remove_orphan(path: Path) -> bool:
     return False
 
 
+def _data_paths(cfg: Config) -> list[Path]:
+    """Every directory SuperTon may have written data or caches to.
+
+    Beyond `cfg.home` (palace + config + build dir + shell history) this
+    sweeps the default platformdirs location (in case `SUPERTON_HOME`
+    points elsewhere), SuperTon's cache dir, and the chromadb cache the
+    semantic backend populates with downloaded embedding models.
+    """
+    from platformdirs import user_cache_dir, user_data_dir
+
+    home = Path.home()
+    paths = [
+        cfg.home,
+        Path(user_data_dir("superton", appauthor=False)),
+        Path(user_cache_dir("superton", appauthor=False)),
+        # chromadb model/telemetry cache (populated by the semantic backend)
+        home / "Library" / "Caches" / "chroma",
+        home / ".cache" / "chroma",
+    ]
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
+
+
 def _uninstall_model_names(cfg: Config, *, models: bool, all_models: bool) -> list[str]:
     if not models:
         return []
@@ -1280,13 +1308,14 @@ def uninstall(
     ui.blank()
     rows: list[tuple[str, str, str]] = []
     if data:
+        existing = [p for p in _data_paths(cfg) if p.exists()]
         rows.append((
-            "→" if cfg.home.exists() else "-",
-            "palace + config",
-            str(cfg.home),
+            "→" if existing else "-",
+            "palace + caches",
+            ", ".join(str(p) for p in existing) or str(cfg.home),
         ))
     else:
-        rows.append(("-", "palace + config", "kept (--keep-data)"))
+        rows.append(("-", "palace + caches", "kept (--keep-data)"))
     if model_names:
         rows.append(("→", "ollama models", ", ".join(model_names)))
     else:
@@ -1337,12 +1366,15 @@ def uninstall(
 
     if data:
         step += 1
-        with ui.stage("removing palace", step=step, total=total_steps):
-            if cfg.home.exists():
-                shutil.rmtree(cfg.home)
-                ui.stage_ok(f"removed {cfg.home}")
-            else:
-                ui.stage_skip(f"already gone: {cfg.home}")
+        with ui.stage("removing palace + caches", step=step, total=total_steps):
+            removed_any = False
+            for path in _data_paths(cfg):
+                if path.exists():
+                    shutil.rmtree(path, ignore_errors=True)
+                    ui.stage_ok(f"removed {path}")
+                    removed_any = True
+            if not removed_any:
+                ui.stage_skip("already gone")
 
     if tool:
         step += 1

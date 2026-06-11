@@ -393,3 +393,14 @@ def test_detect_preflight_reports_ollama_state(env: Path):
     cfg = Config.load()
     rows = _detect_preflight(cfg)
     assert any(name == "ollama" for _, name, _ in rows)
+
+
+def test_data_paths_cover_home_and_caches(env: Path):
+    from superton.cli import _data_paths
+    from superton.config import Config
+
+    paths = _data_paths(Config.load())
+    assert Config.load().home in paths
+    assert len(paths) == len(set(paths))
+    assert any("chroma" in str(p) for p in paths)
+    assert any("superton" in str(p).lower() for p in paths)
