@@ -85,8 +85,8 @@ h1.title em{color:var(--ember);font-weight:400}
 .cta{display:flex;gap:10px;flex-wrap:wrap}
 .btn{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;font-family:"Geist Mono","JetBrains Mono",monospace;font-weight:600;font-size:13.5px;letter-spacing:.02em;border:1px solid var(--rule-strong);background:transparent;color:var(--paper);cursor:pointer;border-radius:0;transition:all .2s}
 .btn.primary{background:var(--ember);color:var(--void);border-color:var(--ember);font-weight:600}
-.btn.primary:hover{background:var(--paper);border-color:var(--paper)}
-.btn:hover{border-color:var(--paper);color:var(--paper)}
+.btn.primary:hover{background:var(--paper);border-color:var(--paper);color:var(--void)}
+.btn:not(.primary):hover{border-color:var(--paper);color:var(--paper)}
 .btn .prompt{opacity:.7;font-weight:600}
 
 /* --- section blocks --------------------------------------------------- */
