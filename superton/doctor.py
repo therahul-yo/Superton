@@ -86,7 +86,6 @@ def collect_doctor_report(cfg: Config) -> dict[str, Any]:
     if ollama_ok:
         add("Superton model", model.has_model(cfg.model), cfg.model)
         add("base model", model.has_model(cfg.base_model), cfg.base_model)
-        add("embed model", model.has_model(cfg.embed_model), cfg.embed_model)
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN") or ""
     if model.hf_ready():
         hf_detail = f"{cfg.hf_model}  (token: {_mask_token(hf_token)})"

@@ -149,7 +149,7 @@ def _detect_preflight(cfg: Config) -> list[tuple[str, str, str]]:
     if shutil.which("ollama") is not None:
         rows.append(("✓", "ollama", "found on PATH"))
         rows.append(("?", "base model", f"{cfg.base_model}  (probed in stage 3)"))
-        rows.append(("?", "embed model", f"{cfg.embed_model}  (probed in stage 4)"))
+        rows.append(("?", "semantic search", "embedding model  (prepared in stage 4)"))
         rows.append(("?", "Superton", f"{cfg.model}  (built in stage 5)"))
     else:
         rows.append(("→", "ollama", "will offer to install"))
@@ -521,33 +521,25 @@ def init(
             ui.stage_ok("downloaded")
 
     # ---------------------------------------------------------------------
-    # Stage 4 — embedding model
+    # Stage 4 — semantic embedder
+    #
+    # The semantic store (MemPalace + Chroma) ships its own ONNX embedding
+    # model (~80 MB) and lazy-downloads it on first ingest. We warm it here
+    # so that download lands in the setup flow instead of interrupting the
+    # user's first question. No Ollama embedding model is pulled — the
+    # earlier `nomic-embed-text` pull was never used by the search path.
     # ---------------------------------------------------------------------
     step += 1
-    with ui.stage(
-        f"pulling embedding model · {cfg.embed_model}",
-        step=step,
-        total=total_stages,
-    ):
-        if model.has_model(cfg.embed_model):
-            ui.stage_ok("already present")
+    with ui.stage("preparing semantic search", step=step, total=total_stages):
+        mem = Memory(cfg)
+        if mem.warm_embedder():
+            ui.stage_ok("embedding model ready")
         else:
-            if not _confirm_pull(
-                cfg.embed_model,
-                "Required for local embeddings and better semantic memory. ~270 MB.",
-                yes=yes,
-            ):
-                ui.stage_warn(
-                    "skipped embedding model pull",
-                    hint=f"rerun later: ollama pull {cfg.embed_model}",
-                )
-                model.close()
-                ui.blank()
-                _finish_init(cfg, offer_demo=not yes)
-                return
-            subprocess.run(["ollama", "pull", cfg.embed_model], check=False)
-            model.invalidate_cache()
-            ui.stage_ok("downloaded")
+            ui.stage_warn(
+                "embedding model not prepared",
+                hint="it will download on your first ingest instead",
+            )
+        mem.close()
 
     # ---------------------------------------------------------------------
     # Stage 5 — build Superton
