@@ -10,7 +10,6 @@ from platformdirs import user_data_dir
 
 from superton.logging import get_logger
 
-
 log = get_logger("config")
 
 VALID_BACKENDS = {"auto", "ollama", "huggingface"}
