@@ -220,6 +220,7 @@ def _prompt(status: _Status | None = None) -> str:
             "completion-menu.completion.current completion.cmd": current_fg,
             "completion-menu.meta.completion": muted_pt,
             "completion-menu.meta.completion.current": f"{primary_bg_pt} {current_meta_fg}",
+            "placeholder": muted_pt,
         })
 
         # Persistent command history across shell sessions.
@@ -241,6 +242,9 @@ def _prompt(status: _Status | None = None) -> str:
             lexer=SuperTonLexer(),
             style=pt_style,
             bottom_toolbar=_bottom_toolbar if status is not None else None,
+            # Ghost hint shown on the empty prompt; disappears on first
+            # keystroke. Quiet onboarding without a persistent banner.
+            placeholder=HTML("<placeholder>ask anything · /help</placeholder>"),
         )
     except (ImportError, ValueError):
         return input("> ")
@@ -367,10 +371,12 @@ def _print_search_hits(hits) -> None:
     preview, separated by a dim rule. This mirrors Claude Code's tool-
     result presentation: clearly delineated but visually quiet.
     """
+    from rich.console import Group
     from rich.text import Text
 
     ui.blank()
     t = ui.theme()
+    cards = []
     for idx, hit in enumerate(hits):
         preview = " ".join(hit.drawer.text.split())[:220]
         score = float(getattr(hit, "score", 0.0) or 0.0)
@@ -380,11 +386,14 @@ def _print_search_hits(hits) -> None:
         header.append(hit.drawer.id[:8], style=t.secondary)
         header.append("  ", style=t.muted)
         header.append(Path(hit.drawer.source).name, style=t.muted)
-        header.append(f"  {score:0.2f}", style=score_col)
-        ui.console().print(header)
-        ui.console().print(f"  [{t.muted}]{preview}[/]")
+        header.append(f"  {score:0.2f} ", style=score_col)
+        header.append_text(ui.score_bar(score))
+        parts = [header, Text(f"  {preview}", style=t.muted)]
         if idx != len(hits) - 1:
-            ui.console().print(f"  [{t.rule}]·[/]")
+            parts.append(Text("  ·", style=t.rule))
+        cards.append(Group(*parts))
+    # Staggered cascade: each hit lands ~45 ms after the previous one.
+    ui.reveal_cards(cards)
     ui.blank()
 
 
