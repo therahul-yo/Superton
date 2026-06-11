@@ -8,9 +8,9 @@ from superton import ui
 
 
 def test_pill_returns_styled_text():
-    p = ui.pill("nebula", kind="primary")
+    p = ui.pill("ember", kind="primary")
     assert isinstance(p, Text)
-    assert "nebula" in p.plain
+    assert "ember" in p.plain
 
 
 def test_pill_unknown_kind_falls_back_to_neutral():
@@ -20,18 +20,18 @@ def test_pill_unknown_kind_falls_back_to_neutral():
 
 def test_status_pills_includes_drawer_count():
     class _Cfg:
-        model_profile = "proton"
+        model = "superton"
 
     pills = ui.status_pills(_Cfg(), {"drawers": 42})
     plain = pills.plain
-    assert "nebula" in plain or ui.theme().name in plain
-    assert "miniton:proton" in plain
+    assert "ember" in plain or ui.theme().name in plain
+    assert "superton" in plain
     assert "42" in plain
 
 
 def test_status_pills_shows_semantic_warning():
     class _Cfg:
-        model_profile = "proton"
+        model = "superton"
 
     pills = ui.status_pills(_Cfg(), {"drawers": 1, "semantic_error": "boom"})
     assert "semantic offline" in pills.plain

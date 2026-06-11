@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from superton.config import (
-    MODEL_PROFILES,
+    DEFAULT_BASE_MODEL,
+    DEFAULT_HF_MODEL,
     VALID_BACKENDS,
     VALID_MEMORY_BACKENDS,
     Config,
@@ -23,12 +24,11 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def test_invalid_model_profile_falls_back_to_fast(home: Path, monkeypatch, caplog):
-    monkeypatch.setenv("SUPERTON_MODEL_PROFILE", "ultra")
-    with caplog.at_level(logging.WARNING, logger="superton.config"):
-        cfg = Config.load()
-    assert cfg.model_profile == "proton"
-    assert any("ultra" in r.message for r in caplog.records)
+def test_default_model_is_minicpm5(home: Path):
+    cfg = Config.load()
+    assert cfg.base_model == DEFAULT_BASE_MODEL == "openbmb/minicpm5"
+    assert cfg.hf_model == DEFAULT_HF_MODEL == "openbmb/MiniCPM5-1B"
+    assert cfg.model == "superton"
 
 
 def test_invalid_model_backend_falls_back_to_auto(home: Path, monkeypatch, caplog):
@@ -45,15 +45,15 @@ def test_invalid_memory_backend_falls_back_to_hybrid(home: Path, monkeypatch, ca
     assert cfg.memory_backend == "hybrid"
 
 
-def test_invalid_theme_falls_back_to_nebula(home: Path, monkeypatch, caplog):
+def test_invalid_theme_falls_back_to_ember(home: Path, monkeypatch, caplog):
     monkeypatch.setenv("SUPERTON_THEME", "neopunk")
     with caplog.at_level(logging.WARNING, logger="superton.config"):
         cfg = Config.load()
-    assert cfg.theme == "nebula"
+    assert cfg.theme == "ember"
 
 
 def test_all_valid_themes_load(home: Path, monkeypatch):
-    for name in ("nebula", "mono", "solar", "frost"):
+    for name in ("ember", "crimson", "void", "ash"):
         monkeypatch.setenv("SUPERTON_THEME", name)
         cfg = Config.load()
         assert cfg.theme == name
@@ -74,52 +74,23 @@ def test_all_valid_memory_backends_load(home: Path, monkeypatch):
 
 
 def test_write_settings_roundtrips(home: Path, monkeypatch):
-    write_settings(home, theme="solar", model_profile="neutron")
+    write_settings(home, theme="void", base_model="openbmb/minicpm5:q8_0")
     monkeypatch.delenv("SUPERTON_THEME", raising=False)
-    monkeypatch.delenv("SUPERTON_MODEL_PROFILE", raising=False)
+    monkeypatch.delenv("SUPERTON_BASE_MODEL", raising=False)
     cfg = Config.load()
-    assert cfg.theme == "solar"
-    assert cfg.model_profile == "neutron"
+    assert cfg.theme == "void"
+    assert cfg.base_model == "openbmb/minicpm5:q8_0"
 
 
 def test_write_settings_overwrites_existing(home: Path, monkeypatch):
-    write_settings(home, theme="solar")
-    write_settings(home, theme="frost")
+    write_settings(home, theme="void")
+    write_settings(home, theme="crimson")
     monkeypatch.delenv("SUPERTON_THEME", raising=False)
     cfg = Config.load()
-    assert cfg.theme == "frost"
+    assert cfg.theme == "crimson"
 
 
 def test_detect_ram_returns_float_or_none():
     # Not asserting an exact value — just that the function never explodes.
     ram = detect_ram_gb()
     assert ram is None or isinstance(ram, float)
-
-
-def test_model_profiles_has_three_tiers():
-    assert set(MODEL_PROFILES) == {"photon", "proton", "neutron"}
-    for data in MODEL_PROFILES.values():
-        assert "base_model" in data
-        assert "min_ram_gb" in data
-
-
-def test_model_profiles_use_qwen35():
-    """The Qwen 2.5 era is over — every shipped profile points at Qwen 3.5."""
-    for data in MODEL_PROFILES.values():
-        assert "qwen3.5" in data["base_model"].lower()
-
-
-@pytest.mark.parametrize(
-    "legacy, modern",
-    [("fast", "photon"), ("better", "proton"), ("strong", "neutron")],
-)
-def test_legacy_profile_names_migrate(
-    home: Path, monkeypatch: pytest.MonkeyPatch, caplog, legacy: str, modern: str
-):
-    """Users carrying `model_profile = "fast"` in their config from the
-    Qwen 2.5 era should be transparently upgraded to the new tier names."""
-    monkeypatch.setenv("SUPERTON_MODEL_PROFILE", legacy)
-    with caplog.at_level(logging.WARNING, logger="superton.config"):
-        cfg = Config.load()
-    assert cfg.model_profile == modern
-    assert any("legacy profile" in r.message for r in caplog.records)

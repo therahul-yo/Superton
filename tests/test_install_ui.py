@@ -103,47 +103,12 @@ def test_ready_card_includes_palace_path_and_commands(cfg: Config, capsys):
     assert str(cfg.palace_dir) in out
 
 
-# --- profile_card ----------------------------------------------------------
-
-
-def test_profile_card_renders_selected_state(capsys):
-    ui.profile_card(
-        "photon",
-        base_model="qwen3.5:0.8b",
-        download_gb=1.0,
-        min_ram_gb=4,
-        label="lowest memory",
-        ram_gb=8.0,
-        selected=True,
-    )
-    out = capsys.readouterr().out
-    assert "photon" in out
-    assert "qwen3.5:0.8b" in out
-    assert "~1.0 GB" in out
-
-
-def test_profile_card_unselected_uses_circle(capsys):
-    ui.profile_card(
-        "neutron",
-        base_model="qwen3.5:9b",
-        download_gb=6.6,
-        min_ram_gb=14,
-        label="best local quality",
-        ram_gb=8.0,
-        selected=False,
-    )
-    out = capsys.readouterr().out
-    assert "neutron" in out
-    assert "○" in out
-    # 8 GB < 14 GB recommended → tight pill
-    assert "tight" in out
-
 
 # --- theme_picker_card -----------------------------------------------------
 
 
 def test_theme_picker_card_shows_all_themes(capsys):
-    ui.theme_picker_card("nebula")
+    ui.theme_picker_card("ember")
     out = capsys.readouterr().out
     for name in ui.THEMES:
         assert name in out

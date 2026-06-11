@@ -131,8 +131,8 @@ def test_format_suggestions_empty():
 
 
 def test_unescape_shell_path_drops_backslash_spaces():
-    raw = r"/Users/rahul/Downloads/Lord\ of\ Mysteries\ -\ Book\ 1.epub"
-    assert _unescape_shell_path(raw) == "/Users/rahul/Downloads/Lord of Mysteries - Book 1.epub"
+    raw = r"/Users/alice/Downloads/Lord\ of\ Mysteries\ -\ Book\ 1.epub"
+    assert _unescape_shell_path(raw) == "/Users/alice/Downloads/Lord of Mysteries - Book 1.epub"
 
 
 def test_unescape_shell_path_handles_parens_and_amp():

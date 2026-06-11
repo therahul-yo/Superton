@@ -1,9 +1,9 @@
 """SuperTon command-line interface.
 
 Commands:
-  superton init                set up palace + check ollama + build Miniton
+  superton init                set up palace + check ollama + build Superton
   superton add <path>          ingest file or directory
-  superton ask "..."           query Miniton with palace context
+  superton ask "..."           query Superton with palace context
   superton list                show recent drawers
   superton search "..."        semantic search with SQLite fallback
   superton forget <id>         remove a drawer
@@ -11,7 +11,7 @@ Commands:
   superton theme [name]        show / switch CLI theme
   superton close               stop SuperTon model runners
   superton import <source>     pull conversations from other AI tools
-  superton tune                edit Modelfile and rebuild Miniton
+  superton tune                edit Modelfile and rebuild Superton
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import typer
 
 from superton import __version__, errors, ui
 from superton.blackhole import static_frame
-from superton.config import MODEL_PROFILES, Config, detect_ram_gb, write_settings
+from superton.config import BASE_MODEL_DOWNLOAD_GB, Config, write_settings
 from superton.ingest import MAX_FILE_BYTES, chunk_text, file_too_large, read_file, walk
 from superton.logging import get_logger
 from superton.memory import Memory
@@ -94,47 +94,12 @@ def _render_modelfile(template: Path, cfg: Config) -> Path:
 
     build_dir = cfg.home / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
-    rendered = build_dir / "Modelfile.miniton"
+    rendered = build_dir / "Modelfile.superton"
     rendered.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return rendered
 
 
-def _pick_model_profile(*, default: str = "proton") -> str:
-    """Interactive picker showing size + RAM-fit per profile.
-
-    Renders one rounded card per profile (active card border accents in
-    primary, others in rule). Each card shows a marker pill, the Ollama
-    base tag, the download size, and a visual RAM-fit bar — easier to
-    read at a glance than the old `Table` form.
-    """
-    ram_gb = detect_ram_gb()
-    ui.blank()
-    ui.section("choose a model profile")
-    if ram_gb is not None:
-        ui.hint(f"detected RAM · {ram_gb:.1f} GB")
-    ui.blank()
-    for name, data in MODEL_PROFILES.items():
-        ui.profile_card(
-            name,
-            base_model=str(data["base_model"]),
-            download_gb=float(data["download_gb"]),
-            min_ram_gb=int(data["min_ram_gb"]),
-            label=str(data["label"]),
-            ram_gb=ram_gb,
-            selected=(name == default),
-        )
-    ui.blank()
-    while True:
-        choice = typer.prompt(
-            f"profile [{'/'.join(MODEL_PROFILES)}]",
-            default=default,
-        ).strip().lower()
-        if choice in MODEL_PROFILES:
-            return choice
-        ui.warn("pick one of: " + ", ".join(MODEL_PROFILES))
-
-
-def _pick_theme(*, default: str = "nebula") -> str:
+def _pick_theme(*, default: str = "ember") -> str:
     """Interactive theme picker shown during init.
 
     Stays quiet when the user already accepted a CLI flag — only invoked
@@ -143,6 +108,13 @@ def _pick_theme(*, default: str = "nebula") -> str:
     """
     ui.blank()
     ui.section("choose a theme")
+    ui.blank()
+    picked = ui.pick_theme_interactive(default)
+    if picked is not None:
+        ui.set_theme(picked)
+        ui.ok(f"theme → {picked}")
+        return picked
+    # No TTY (CI, piped stdin) — fall back to the typed prompt.
     ui.theme_picker_card(default)
     ui.blank()
     while True:
@@ -178,11 +150,11 @@ def _detect_preflight(cfg: Config) -> list[tuple[str, str, str]]:
         rows.append(("✓", "ollama", "found on PATH"))
         rows.append(("?", "base model", f"{cfg.base_model}  (probed in stage 3)"))
         rows.append(("?", "embed model", f"{cfg.embed_model}  (probed in stage 4)"))
-        rows.append(("?", "Miniton", f"{cfg.model}  (built in stage 5)"))
+        rows.append(("?", "Superton", f"{cfg.model}  (built in stage 5)"))
     else:
         rows.append(("→", "ollama", "will offer to install"))
         rows.append(("?", "base model", "needs ollama"))
-        rows.append(("?", "Miniton", "needs ollama"))
+        rows.append(("?", "Superton", "needs ollama"))
 
     claude_root = Path.home() / ".claude" / "projects"
     if claude_root.exists() and any(claude_root.rglob("*.jsonl")):
@@ -212,7 +184,7 @@ def _offer_ollama_install(*, yes: bool) -> bool:
     ui.blank()
     ui.card(
         "install ollama",
-        f"Ollama is missing — needed to run Miniton locally.\n\n"
+        f"Ollama is missing — needed to run Superton locally.\n\n"
         f"Will run: [bold]{' '.join(cmd)}[/]",
         status=("required", "warning"),
     )
@@ -257,7 +229,7 @@ DEMO_DRAWERS: tuple[tuple[str, str, str, str], ...] = (
         "demo:transcripts/assistant-session.md",
         "transcripts",
         "demo",
-        "Assistant transcript: Rahul decided the product should stay local-first, avoid "
+        "Assistant transcript: the team decided the product should stay local-first, avoid "
         "telemetry, and make recovery hints visible whenever setup cannot complete a stage.",
     ),
 )
@@ -335,7 +307,7 @@ def _ingest_into_memory(
     return len(files) - skipped, total_drawers, skipped, deduped
 
 
-def _build_miniton(cfg: Config, *, yes: bool) -> bool:
+def _build_superton(cfg: Config, *, yes: bool) -> bool:
     if shutil.which("ollama") is None:
         ui.warn("ollama not found in PATH")
         ui.hint("install: [link]https://ollama.com/download[/link]")
@@ -350,7 +322,7 @@ def _build_miniton(cfg: Config, *, yes: bool) -> bool:
     if not model.has_model(cfg.base_model):
         if not _confirm_pull(
             cfg.base_model,
-            f"Required for {cfg.model_profile} profile.",
+            "Required as the Superton base model.",
             yes=yes,
         ):
             model.close()
@@ -396,16 +368,12 @@ def welcome() -> None:
 def init(
     skip_model: bool = typer.Option(False, "--no-model", help="skip ollama model build"),
     yes: bool = typer.Option(False, "--yes", "-y", help="accept setup prompts"),
-    model_profile: str | None = typer.Option(
-        None, "--model", "-m",
-        help=f"model profile to set up: {', '.join(MODEL_PROFILES)}",
-    ),
     theme: str | None = typer.Option(
         None, "--theme", "-t",
         help=f"CLI theme: {', '.join(ui.THEMES)}",
     ),
 ) -> None:
-    """Initialize the palace and build Miniton."""
+    """Initialize the palace and build Superton."""
     cfg = _cfg()
     cfg.home.mkdir(parents=True, exist_ok=True)
     cfg.palace_dir.mkdir(parents=True, exist_ok=True)
@@ -431,23 +399,14 @@ def init(
 
     # Validate user-provided flags first so a typo fails fast, before we
     # walk through interactive prompts.
-    if model_profile and model_profile not in MODEL_PROFILES:
-        ui.err("unknown model profile", "choose one of: " + ", ".join(MODEL_PROFILES))
-        raise typer.Exit(1)
     if theme and theme not in ui.THEMES:
         ui.err("unknown theme", "choose one of: " + ", ".join(ui.THEMES))
         raise typer.Exit(1)
 
     # ---------------------------------------------------------------------
-    # Stage 0 — pick model profile + theme (interactive when not provided and
-    # the user didn't pass --yes, so first-run users see the choices)
+    # Stage 0 — pick theme (interactive when not provided and the user
+    # didn't pass --yes, so first-run users see the choices)
     # ---------------------------------------------------------------------
-    if model_profile is None and not yes and not skip_model:
-        try:
-            model_profile = _pick_model_profile(default=cfg.model_profile)
-        except (EOFError, KeyboardInterrupt):
-            model_profile = cfg.model_profile
-
     if theme is None and not yes:
         try:
             theme = _pick_theme(default=cfg.theme)
@@ -455,13 +414,6 @@ def init(
             theme = cfg.theme
 
     settings_update: dict[str, str] = {}
-    if model_profile and model_profile != cfg.model_profile:
-        selected = MODEL_PROFILES[model_profile]
-        settings_update.update(
-            model_profile=model_profile,
-            base_model=selected["base_model"],
-            hf_model=selected["hf_model"],
-        )
     if theme and theme != cfg.theme:
         settings_update["theme"] = theme
     if settings_update:
@@ -535,7 +487,6 @@ def init(
     # Stage 3 — base model
     # ---------------------------------------------------------------------
     step += 1
-    profile_data = MODEL_PROFILES[cfg.model_profile]
     with ui.stage(
         f"pulling base model · {cfg.base_model}",
         step=step,
@@ -546,8 +497,8 @@ def init(
         else:
             if not _confirm_pull(
                 cfg.base_model,
-                f"Required to build Miniton, the local answer model. "
-                f"~{profile_data['download_gb']:.1f} GB.",
+                f"Required to build Superton, the local answer model. "
+                f"~{BASE_MODEL_DOWNLOAD_GB:.1f} GB.",
                 yes=yes,
             ):
                 ui.stage_warn(
@@ -599,10 +550,10 @@ def init(
             ui.stage_ok("downloaded")
 
     # ---------------------------------------------------------------------
-    # Stage 5 — build Miniton
+    # Stage 5 — build Superton
     # ---------------------------------------------------------------------
     step += 1
-    with ui.stage("building Miniton", step=step, total=total_stages):
+    with ui.stage("building Superton", step=step, total=total_stages):
         modelfile = _project_modelfile()
         if modelfile is None:
             ui.stage_warn(
@@ -834,7 +785,7 @@ def ask(
     k: int = typer.Option(5, "--top-k", "-k"),
     why: bool = typer.Option(False, "--why", help="show retrieval trace"),
 ) -> None:
-    """Ask Miniton a question. Answer is grounded in palace drawers."""
+    """Ask Superton a question. Answer is grounded in palace drawers."""
     cfg = _cfg()
     mem = Memory(cfg)
     # Empty-palace check before retrieval: skip the search spinner entirely
@@ -903,13 +854,13 @@ def ask(
     system = _build_system_prompt(has_drawers=bool(hits))
     if hits:
         prompt = (
-            f"MEMORY DRAWERS:\n\n{context}\n\n"
-            f"User question: {question}\n\n"
-            "Answer using only the drawers above."
+            f"FILE EXCERPTS:\n\n{context}\n\n"
+            f"QUESTION: {question}\n\n"
+            "Answer from the excerpts above."
         )
     else:
         prompt = (
-            "No memory drawers were retrieved.\n\n"
+            "No file excerpts were retrieved.\n\n"
             f"User question: {question}\n\n"
             "Answer briefly as a local model."
         )
@@ -1073,42 +1024,15 @@ def sources(
 
 
 @app.command("model")
-def model_profile(
-    profile: str | None = typer.Argument(None, help="fast, better, or strong"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="accept model download prompts"),
-    build: bool = typer.Option(True, "--build/--no-build", help="rebuild Miniton after switching"),
-) -> None:
-    """Show or switch Miniton's model profile."""
+def model_info() -> None:
+    """Show the Superton model configuration."""
     cfg = _cfg()
-    if profile is None:
-        ui.section("model profile", f"active: {cfg.model_profile}")
-        table = ui.make_table("profile", "model", "notes")
-        for name, data in MODEL_PROFILES.items():
-            marker = "●" if name == cfg.model_profile else "○"
-            table.add_row(f"{marker} {name}", data["base_model"], data["label"])
-        ui.print_table(table)
-        return
-    if profile not in MODEL_PROFILES:
-        ui.err("unknown profile", "choose " + " | ".join(MODEL_PROFILES))
-        raise typer.Exit(1)
-    selected = MODEL_PROFILES[profile]
-    write_settings(
-        cfg.home,
-        model_profile=profile,
-        base_model=selected["base_model"],
-        hf_model=selected["hf_model"],
-    )
-    cfg = Config.load()
-    ui.flash(
-        f"[bold {ui.theme().primary}]model[/] → "
-        f"[bold]{profile}[/]  [{ui.theme().muted}]{cfg.base_model}[/]"
-    )
-    ui.ok(f"model profile → {profile}", cfg.base_model)
-    if build:
-        if _build_miniton(cfg, yes=yes):
-            ui.ok(f"rebuilt {cfg.model}")
-        else:
-            ui.warn("profile saved, but model was not rebuilt")
+    ui.section("model", cfg.model)
+    ui.kv([
+        ("model", cfg.model),
+        ("base model", cfg.base_model),
+        ("hf fallback", cfg.hf_model),
+    ])
 
 
 @app.command("theme")
@@ -1335,7 +1259,7 @@ def uninstall(
 
     By default this removes **everything**: the palace at
     `~/Library/Application Support/superton` (or `$SUPERTON_HOME`), the
-    Ollama tags for Miniton + base + embed, and the `superton` CLI
+    Ollama tags for Superton + base + embed, and the `superton` CLI
     binary itself. Pass `--keep-data`, `--keep-models`, or `--keep-tool`
     to opt out of any stage.
 
@@ -1395,7 +1319,7 @@ def uninstall(
             if shutil.which("ollama") is None:
                 ui.stage_warn(
                     "ollama not found; skipped model removal",
-                    hint="run `ollama rm miniton` manually after installing ollama",
+                    hint="run `ollama rm superton` manually after installing ollama",
                 )
             else:
                 model = Model(cfg)
@@ -1560,7 +1484,7 @@ def import_amp(
 
 @app.command()
 def tune() -> None:
-    """Open the Modelfile in $EDITOR and rebuild Miniton."""
+    """Open the Modelfile in $EDITOR and rebuild Superton."""
     cfg = _cfg()
     modelfile = _project_modelfile()
     if modelfile is None:

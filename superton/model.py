@@ -1,4 +1,4 @@
-"""Miniton model layer — Ollama first, Hugging Face fallback."""
+"""Superton model layer — Ollama first, Hugging Face fallback."""
 
 from __future__ import annotations
 
@@ -134,7 +134,7 @@ class Model:
         system: str | None = None,
         history: list[dict[str, str]] | None = None,
     ) -> Iterator[str]:
-        """Stream tokens from Miniton via /api/chat (structured messages)."""
+        """Stream tokens from Superton via /api/chat (structured messages)."""
         backend = self.backend()
         log.debug("generate via backend=%s prompt_chars=%d", backend, len(prompt))
         if backend == "huggingface":
@@ -154,7 +154,7 @@ class Model:
             "model": self.cfg.model,
             "messages": messages,
             "stream": True,
-            # Qwen reasoning control belongs on the Ollama chat request. It is
+            # MiniCPM5 reasoning control belongs on the Ollama chat request. It is
             # not a valid Modelfile PARAMETER on current Ollama builds.
             "think": False,
             "options": {"num_predict": 512},

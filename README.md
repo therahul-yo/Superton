@@ -26,13 +26,13 @@
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/therahul-yo/Superton/main/install.sh | sh
-superton init                    # set up palace + Miniton (~2 min, one-time)
+superton init                    # set up palace + Superton (~2 min, one-time)
 superton add ~/Documents/notes   # ingest a folder
 superton                         # start chatting with cited answers
 ```
 
 **SuperTon** ingests your PDFs, notes, code, and AI-tool transcripts into a single
-local knowledge base. A tiny custom local model (`Miniton`) answers your questions
+local knowledge base. A tiny custom local model (`Superton`) answers your questions
 grounded in *your* data — with citations. No cloud. No API keys. No telemetry.
 
 - 🧠 **Verbatim storage** — original text preserved; never summarized away
@@ -54,8 +54,8 @@ Measured on Apple M4 MacBook Air (16 GB) with 2 000 synthetic drawers. Re-run vi
 | Storage per drawer | **~840 bytes** (SQLite + FTS) |
 | Test suite | **231 passing**, mypy-strict core |
 
-First-token latency from Miniton itself depends on your Ollama setup and base
-model — typically ~2 s on M4 MacBook Air with `qwen3.5:0.8b`. Streaming starts as soon as the
+First-token latency from Superton itself depends on your Ollama setup and base
+model — typically ~2 s on M4 MacBook Air with `openbmb/minicpm5`. Streaming starts as soon as the
 first token is decoded.
 
 ## Why I built this
@@ -108,7 +108,7 @@ The interesting choices, with the tradeoffs called out:
   (`blake2b(source ⊕ text)`). Re-ingesting the same file is a no-op —
   the semantic upsert is skipped on a hit, so re-runs are cheap.
 - **Refuse instead of confabulate.** For memory-specific queries with no
-  matching tokens in any retrieved drawer, Miniton refuses rather than
+  matching tokens in any retrieved drawer, Superton refuses rather than
   generating a plausible-but-wrong answer from the model's parametric
   memory. The user gets a "did you mean…" with the closest source files
   instead.
@@ -175,7 +175,7 @@ GitHub install command.
 
 `superton init` runs as a staged flow: it creates the palace, starts Ollama
 when possible, asks before downloading missing model weights, builds your
-custom `Miniton` from the `Modelfile`, and — if it finds Claude Code sessions
+custom `Superton` from the `Modelfile`, and — if it finds Claude Code sessions
 at `~/.claude/projects` — offers to import them right away. Use
 `superton init --yes` for non-interactive setup. The palace lives at
 `~/Library/Application Support/superton/palace`.
@@ -200,7 +200,7 @@ superton import chatgpt ~/Downloads/chatgpt-export
 superton import cursor
 superton import amp
 
-# ask it — Miniton streams tokens live and cites the drawers it used
+# ask it — Superton streams tokens live and cites the drawers it used
 superton ask "what did i decide about graphql last spring?"
 superton ask "open issues in the auth refactor" --why
 
@@ -212,9 +212,9 @@ superton stats
 superton doctor
 superton reindex
 
-# switch model / theme / palette
-superton model neutron
-superton theme solar
+# show model / switch theme / palette
+superton model
+superton theme crimson
 superton welcome                 # anytime tour of what's installed
 
 # power tools
@@ -222,11 +222,11 @@ superton mcp serve               # expose the palace to Claude / Cursor / Gemini
 superton dedup --dry-run         # find near-duplicate drawers
 superton close                   # stop local model runners
 
-# or launch the interactive shell — type /stop to unload Miniton, /quit to stop + exit
+# or launch the interactive shell — type /stop to unload Superton, /quit to stop + exit
 superton
 ```
 
-Inside the interactive shell, paste a file path directly to ingest it. Miniton
+Inside the interactive shell, paste a file path directly to ingest it. Superton
 streams its reply with an inline cursor, renders the result as markdown, and
 appends a `sources` footer listing every drawer it used:
 
@@ -235,7 +235,7 @@ appends a `sources` footer listing every drawer it used:
 ✓ ingested 4 drawers from 1 file(s)
 › gimme my projects from the resume
 
-Miniton
+Superton
 - Built SmithWorks — a role-based freelance marketplace using React,
   Node.js, Socket.IO, JWT, and AWS EC2. [3beb9480]
 - Built TopX AI Resume Analyzer — Flask + scikit-learn NLP pipeline
@@ -248,7 +248,7 @@ sources
 ```
 
 Inside the shell, `/clear` resets the conversation, `/theme <name>` swaps the
-palette, and `/model <profile>` switches Miniton's base model with a brief
+palette, and `/model` shows Superton's model configuration with a brief
 confirmation flash.
 
 ## Web Puller
@@ -282,7 +282,7 @@ Features:
 | `superton init` | One-time staged setup: palace + model + optional Claude Code import |
 | `superton welcome` | Show the header + palace intro + next-steps card any time |
 | `superton add <path>` | Ingest a file or directory |
-| `superton ask "..."` | Query Miniton with palace context (streaming + citations) |
+| `superton ask "..."` | Query Superton with palace context (streaming + citations) |
 | `superton list` | Show recent drawers |
 | `superton search "..."` | Hybrid search via MemPalace with SQLite fallback |
 | `superton forget <id>` | Remove a drawer |
@@ -292,18 +292,18 @@ Features:
 | `superton stats` | Palace statistics |
 | `superton doctor` | Check local runtime, memory, theme, and model setup |
 | `superton reindex` | Rebuild semantic index from stored drawers |
-| `superton model [photon\|proton\|neutron]` | Show or switch Miniton model profile |
-| `superton theme [nebula\|mono\|solar\|frost]` | Show or switch the CLI theme |
+| `superton model` | Show the Superton model configuration |
+| `superton theme [ember\|crimson\|void\|ash]` | Show or switch the CLI theme |
 | `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
 | `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
 | `superton close` | Stop running SuperTon model runners |
-| `/stop` or `/quit` in the shell | Stop Miniton; `/quit` also exits |
+| `/stop` or `/quit` in the shell | Stop Superton; `/quit` also exits |
 | `superton uninstall --yes --tool` | Remove local SuperTon data, Ollama models, and CLI install |
 | `superton import claude-code` | Import Claude Code session history |
 | `superton import chatgpt <export>` | Import ChatGPT `conversations.json` exports |
 | `superton import cursor` | Import readable Cursor thread/log files |
 | `superton import amp` | Import readable Amp thread/log files |
-| `superton tune` | Edit the Modelfile and rebuild Miniton |
+| `superton tune` | Edit the Modelfile and rebuild Superton |
 | `superton` | Launch the interactive CLI shell |
 
 ## Uninstall
@@ -317,13 +317,13 @@ superton uninstall --yes --tool
 This removes:
 
 - SuperTon palace data and config from the user data directory
-- the `miniton` Ollama model
-- the configured base model, such as `qwen3.5:0.8b`, `qwen3.5:4b`, or `qwen3.5:9b`
+- the `superton` Ollama model
+- the configured base model, `openbmb/minicpm5`
 - the embedding model, `nomic-embed-text`
 - the installed `superton` CLI tool when it was installed through uv, pipx, or pip
 
 Use `--keep-data` to keep the palace, `--keep-models` to skip all Ollama model
-removal, or `--keep-base-models` to remove only `miniton` while preserving the
+removal, or `--keep-base-models` to remove only `superton` while preserving the
 base and embedding models.
 
 ## Architecture
@@ -338,7 +338,7 @@ base and embedding models.
 │  errors: typed exceptions + recovery hints      │
 │  logging: env-driven structured logs            │
 ├─────────────────────────────────────────────────┤
-│  Miniton (Ollama + Modelfile · HF fallback)     │
+│  Superton (Ollama + Modelfile · HF fallback)     │
 ├─────────────────────────────────────────────────┤
 │  memory: SQLite + MemPalace semantic            │
 │          + source-filename hoist re-rank        │
@@ -355,17 +355,25 @@ SuperTon ships with four hand-tuned CLI themes:
 
 | Theme | Vibe |
 |---|---|
-| `nebula` | amber + violet accents · default, ties to the black-hole identity |
-| `mono` | monochrome · bold white/grey only, Claude-code-style minimalism |
-| `solar` | warm amber/orange · sunrise palette |
-| `frost` | cool cyan/blue · arctic palette |
+| `ember` | burnt orange on black · default, embers-on-black identity |
+| `crimson` | blood red on black · dark and sharp |
+| `void` | dark violet · deep-space palette |
+| `ash` | white on black · stark monochrome |
+
+Each theme carries its own design language, not just colors: a unique
+prompt glyph (`◉ ✦ ◈ ›`), spinner style, and rule character — `ember`
+draws solid gradient rules, `crimson` dotted, `void` dashed. Section
+headers sweep muted → primary as they appear, install stages tick in
+with a 3-frame pulse, and the stage tracker shows `●●○○○` progress dots.
+During `superton init` the theme picker is fully interactive: ↑/↓ to
+move with a live color preview, Enter to select.
 
 Switch any time:
 
 ```bash
 superton theme                 # show all with color swatches
-superton theme frost           # switch; a 200 ms flash confirms the change
-export SUPERTON_THEME=mono     # env override (useful in CI / screenshots)
+superton theme void            # switch; a 200 ms flash confirms the change
+export SUPERTON_THEME=ash      # env override (useful in CI / screenshots)
 ```
 
 All semantic output (paths, drawer ids, commands, key bindings) is styled
@@ -388,37 +396,24 @@ tool on your machine.
 
 ## Model Strategy
 
-`Miniton` is SuperTon's local answer model. The default public/runtime tag is
-`miniton`; by default it is built from `qwen3.5:4b` via Ollama. You can
+`Superton` is SuperTon's local answer model. The default public/runtime tag is
+`superton`; by default it is built from `openbmb/minicpm5` via Ollama. You can
 override the base with `SUPERTON_BASE_MODEL`. Exact recall comes from the
 palace drawers, not from model weights — the model only has to phrase the
 answer.
 
-### Model profiles
+### Base model
 
-Particle-physics names rhyme with the SuperTon / Miniton vocabulary:
+SuperTon ships with a single default base model:
 
-| Profile | Ollama base | Params | Download | RAM | Use case |
-|---|---|---|---|---|---|
-| `photon` | `qwen3.5:0.8b` | 0.8B | ~1.0 GB | 4 GB | runs anywhere, ideal for old laptops |
-| `proton` *(default)* | `qwen3.5:4b` | 4B | ~3.4 GB | 8 GB | balanced everyday use |
-| `neutron` | `qwen3.5:9b` | 9B | ~6.6 GB | 14 GB | best local quality, wants real RAM |
+| Ollama base | Params | Download | Context | Notes |
+|---|---|---|---|---|
+| `openbmb/minicpm5` | 1B | ~0.7 GB | 128K | small, fast, runs on any laptop |
 
-All three pull Qwen 3.5 weights (released Feb 2026 — native tool calling,
-256K context, instruction-tuned). The Modelfile wraps them with SuperTon's
-SYSTEM prompt and pins `think false`, `num_ctx 16384`, and a low
-temperature so answers stay terse and citation-friendly.
-
-Switch profile:
-
-```bash
-superton model neutron
-superton init --yes
-```
-
-Users coming from the Qwen 2.5 era keep their old config keys — `fast`,
-`better`, and `strong` are transparently migrated to `photon`, `proton`,
-and `neutron` on next launch with a logged warning.
+The Modelfile wraps it with SuperTon's SYSTEM prompt and pins
+`num_ctx 16384` and a low temperature so answers stay terse and
+citation-friendly. Override the base with `SUPERTON_BASE_MODEL`
+(e.g. `openbmb/minicpm5:q8_0` or `openbmb/minicpm5:fp16`).
 
 If Ollama is not available, SuperTon can use Hugging Face Inference as a fallback:
 
@@ -449,12 +444,11 @@ four characters so the report is shareable.
 | variable | purpose | default |
 |---|---|---|
 | `SUPERTON_HOME` | override palace location | platform-specific |
-| `SUPERTON_THEME` | `nebula \| mono \| solar \| frost` | `nebula` |
-| `SUPERTON_MODEL_PROFILE` | `photon \| proton \| neutron` | `proton` |
+| `SUPERTON_THEME` | `ember \| crimson \| void \| ash` | `ember` |
 | `SUPERTON_MODEL_BACKEND` | `auto \| ollama \| huggingface` | `auto` |
 | `SUPERTON_MEMORY_BACKEND` | `hybrid \| semantic \| mempalace \| sqlite` | `hybrid` |
-| `SUPERTON_BASE_MODEL` | override the Ollama base tag | profile default |
-| `SUPERTON_HF_MODEL` | override the Hugging Face fallback | profile default |
+| `SUPERTON_BASE_MODEL` | override the Ollama base tag | `openbmb/minicpm5` |
+| `SUPERTON_HF_MODEL` | override the Hugging Face fallback | `openbmb/MiniCPM5-1B` |
 | `OLLAMA_HOST` | Ollama daemon URL | `http://127.0.0.1:11434` |
 | `HF_TOKEN` | enables Hugging Face fallback | — |
 | `SUPERTON_LOG` | `debug \| info \| warn \| error \| off` | `warn` |

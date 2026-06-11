@@ -20,7 +20,7 @@ treat sub-percent variation as noise.
 
 What this script does NOT measure (do it manually):
 
-    - First-token latency from a real model (needs Ollama + Miniton)
+    - First-token latency from a real model (needs Ollama + Superton)
     - R@5 retrieval recall (needs a labelled Q→drawer corpus)
     - End-to-end install→first-answer time (needs a fresh machine)
 

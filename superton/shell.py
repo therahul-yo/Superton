@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from superton import __version__, chat, errors, ui
-from superton.config import MODEL_PROFILES, Config, write_settings
+from superton.config import Config, write_settings
 from superton.logging import get_logger
 from superton.memory import Memory
 from superton.model import Model, ModelError
@@ -44,14 +44,14 @@ COMMAND_HELP = {
     "/forget-source": "remove all drawers from a source",
     "/help": "show shortcuts",
     "/import": "pull conversations from another AI tool",
-    "/model": "show/switch model profile",
+    "/model": "show model configuration",
     "/quit": "exit SuperTon",
     "/refresh": "reingest a source and remove stale chunks",
     "/reindex": "rebuild semantic index",
     "/search": "search memory",
     "/sources": "list indexed sources",
     "/stats": "show palace stats",
-    "/stop": "stop Miniton without quitting",
+    "/stop": "stop Superton without quitting",
     "/theme": "show/switch CLI theme",
 }
 ANSWER_CONTEXT_DRAWERS = 10
@@ -109,7 +109,7 @@ class _Status:
         # prompt_toolkit HTML — keep it dim and one-line.
         return (
             f"<bottom-toolbar.text>"
-            f"{glyph} {backend} · palace: {n} drawers · model: {self.cfg.model_profile} · "
+            f"{glyph} {backend} · palace: {n} drawers · model: {self.cfg.model} · "
             f"theme: {t.name}  ·  /help · /quit"
             f"</bottom-toolbar.text>"
         )
@@ -132,16 +132,6 @@ def _prompt(status: _Status | None = None) -> str:
                 if not text.startswith("/"):
                     return
                 parts = text.split()
-                if len(parts) == 2 and parts[0] == "/model":
-                    word = parts[-1]
-                    for profile in MODEL_PROFILES:
-                        if profile.startswith(word) or word in profile:
-                            yield Completion(
-                                profile,
-                                start_position=-len(word),
-                                display_meta=MODEL_PROFILES[profile]["label"],
-                            )
-                    return
                 if len(parts) == 2 and parts[0] == "/theme":
                     word = parts[-1]
                     for theme_obj in ui.list_themes():
@@ -257,9 +247,9 @@ def _prompt(status: _Status | None = None) -> str:
 
 
 def _print_assistant(answer: str, hits=None) -> None:
-    """Print Miniton's reply. Tests assert exact body substrings."""
+    """Print Superton's reply. Tests assert exact body substrings."""
     ui.blank()
-    ui.console().print(f"[bold {ui.theme().primary}]Miniton[/]")
+    ui.console().print(f"[bold {ui.theme().primary}]Superton[/]")
     ui.console().print(answer)
     if hits:
         ui.citations(hits[:3])
@@ -414,12 +404,10 @@ def _print_sources(mem: Memory) -> None:
 
 def _print_model(cfg: Config) -> None:
     ui.blank()
-    for name, data in MODEL_PROFILES.items():
-        marker = "●" if name == cfg.model_profile else "○"
-        ui.console().print(
-            f"{marker} [bold]{name}[/bold]  {data['base_model']}  "
-            f"[{ui.theme().muted}]{data['label']}[/]"
-        )
+    ui.console().print(
+        f"● [bold]{cfg.model}[/bold]  {cfg.base_model}  "
+        f"[{ui.theme().muted}]MiniCPM5 · 1B · 128K context[/]"
+    )
     ui.blank()
 
 
@@ -504,57 +492,6 @@ def _run_import(mem: Memory, spec: str) -> None:
     ui.blank()
 
 
-def _switch_model(profile: str) -> Config:
-    if profile not in MODEL_PROFILES:
-        ui.blank()
-        ui.warn("choose one of: " + ", ".join(MODEL_PROFILES))
-        ui.blank()
-        return Config.load()
-    selected = MODEL_PROFILES[profile]
-    cfg = Config.load()
-    write_settings(
-        cfg.home,
-        model_profile=profile,
-        base_model=selected["base_model"],
-        hf_model=selected["hf_model"],
-    )
-    cfg = Config.load()
-    ui.flash(
-        f"[bold {ui.theme().primary}]model[/] → "
-        f"[bold]{profile}[/]  [{ui.theme().muted}]{selected['base_model']}[/]"
-    )
-    ui.blank()
-    ui.ok(f"model profile → {profile}", selected["base_model"])
-    # Offer to pull+build immediately so the user doesn't have to drop back
-    # to the shell and re-run `superton init --yes`. We probe the existing
-    # Model first — if the base is already pulled and Miniton is already
-    # built, nothing to do.
-    model = Model(cfg)
-    needs_build = not model.has_model(cfg.model)
-    needs_pull = not model.has_model(cfg.base_model)
-    model.close()
-    if not needs_build and not needs_pull:
-        ui.hint("model already built — ready to chat")
-        ui.blank()
-        return cfg
-    action = "pull + build" if needs_pull else "rebuild"
-    try:
-        answer = input(f"  {action} {cfg.base_model} now? [Y/n] ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        answer = "n"
-    if answer in {"", "y", "yes"}:
-        from superton.cli import _build_miniton
-
-        if _build_miniton(cfg, yes=True):
-            ui.ok(f"rebuilt {cfg.model}")
-        else:
-            ui.warn("profile saved, but model was not rebuilt")
-    else:
-        ui.hint("run [bold]superton init --yes[/bold] later to finish setup")
-    ui.blank()
-    return cfg
-
-
 def _switch_theme(name: str) -> Config:
     if name not in ui.THEMES:
         ui.blank()
@@ -604,7 +541,7 @@ def _answer(
     streams tokens through `ui.stream_answer`, and prints citations.
     """
     # Retrieval can take a few hundred ms on large palaces — show a
-    # spinner so the pause between Enter and the Miniton header doesn't
+    # spinner so the pause between Enter and the Superton header doesn't
     # read as a hang. The thinking spinner inside `ui.stream_answer`
     # covers the gap from then until the first token.
     with ui.spinner("searching palace…"):
@@ -622,7 +559,7 @@ def _answer(
         return text
 
     if not answer:
-        text = "I found related memory, but Miniton returned an empty answer."
+        text = "I found related memory, but Superton returned an empty answer."
         _print_assistant(text, hits=plan.hits)
         return text
 
@@ -657,7 +594,7 @@ def run() -> None:
                     "ingest: /add <path> · /import claude-code|chatgpt|cursor|amp · "
                     "/refresh <path>\n"
                     "search: /search <query> · /sources · /forget-source <name>\n"
-                    "config: /model [photon|proton|neutron] · /theme · /reindex\n"
+                    "config: /model · /theme · /reindex\n"
                     "system: /doctor · /stats · /clear · /stop · /quit"
                 )
                 continue
@@ -682,12 +619,6 @@ def run() -> None:
                 continue
             if text == "/model":
                 _print_model(cfg)
-                continue
-            if text.startswith("/model "):
-                cfg = _switch_model(text.removeprefix("/model ").strip())
-                model.close()
-                model = Model(cfg)
-                status.refresh(cfg, model)
                 continue
             if text == "/theme":
                 _print_themes(cfg)

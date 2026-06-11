@@ -207,7 +207,7 @@ section:last-of-type{border-bottom:0}
         <div class="step reveal d1">
           <div class="label"><b>02</b>Initialize the palace</div>
           <div class="cmd" onclick="copyCmd(this.dataset.cmd,this)" data-cmd="superton init"><span class="prompt">$</span><span>superton init</span><span class="copy">copy</span></div>
-          <div class="note">Picks a model profile, pulls Ollama if missing, builds Miniton.</div>
+          <div class="note">Pulls Ollama if missing, downloads MiniCPM5 (~700 MB), builds the <code>superton</code> model. Arrow-key theme picker included.</div>
         </div>
         <div class="step reveal d2">
           <div class="label"><b>+</b>Optional · install Ollama yourself</div>
@@ -222,7 +222,7 @@ section:last-of-type{border-bottom:0}
       <div class="terminal reveal d2">
         <div class="titlebar">
           <div class="lights"><span></span><span></span><span></span></div>
-          <div class="where">~/superton · miniton</div>
+          <div class="where">~/superton · superton</div>
         </div>
         <div class="body" id="terminal-body"></div>
       </div>
@@ -256,8 +256,8 @@ section:last-of-type{border-bottom:0}
         <div class="tenet reveal d3">
           <div class="n">IV.</div>
           <div>
-            <h3>Three Miniton profiles.</h3>
-            <p><em>photon</em> — qwen3.5:0.8b, 4 GB RAM, runs anywhere. <em>proton</em> — qwen3.5:4b, 8 GB, balanced everyday default. <em>neutron</em> — qwen3.5:9b, 14 GB, best local quality. Switch with superton model.</p>
+            <h3>One tiny model.</h3>
+            <p><em>openbmb/minicpm5</em> — 1B params, ~700 MB download, 128K context. Fast first token on any laptop; the palace provides exact recall, the model only phrases the answer. Override with SUPERTON_BASE_MODEL.</p>
           </div>
         </div>
       </div>
@@ -279,7 +279,7 @@ section:last-of-type{border-bottom:0}
 </span><span class="a">Storage per drawer                    </span><span class="cite">~840 bytes (SQLite + FTS)
 </span><span class="c">
 # first-token latency depends on your ollama setup and base
-# model — typically ~2 s on M4 with qwen3.5:0.8b.</span></div>
+# model — typically ~2 s on M4 with openbmb/minicpm5.</span></div>
       </div>
     </section>
 
@@ -298,7 +298,7 @@ section:last-of-type{border-bottom:0}
           <div class="n">II.</div>
           <div>
             <h3>Refuse over confabulate.</h3>
-            <p>When the palace is silent, Miniton says so — and suggests the closest files. No invented dates, names, or numbers.</p>
+            <p>When the palace is silent, Superton says so — and suggests the closest files. No invented dates, names, or numbers.</p>
           </div>
         </div>
         <div class="tenet reveal d2">

@@ -55,7 +55,7 @@ def collect_doctor_report(cfg: Config) -> dict[str, Any]:
     add("drawers", True, str(s["drawers"]))
     add("memory backend", True, cfg.memory_backend)
     add("model backend", True, cfg.model_backend)
-    add("model profile", True, f"{cfg.model_profile} · {cfg.base_model}")
+    add("model", True, f"{cfg.model} · {cfg.base_model}")
     add("theme", True, f"{cfg.theme} · {ui.theme().label}")
 
     try:
@@ -84,7 +84,7 @@ def collect_doctor_report(cfg: Config) -> dict[str, Any]:
     ollama_ok = model.ollama_ready()
     add("ollama daemon", ollama_ok, cfg.ollama_url)
     if ollama_ok:
-        add("Miniton model", model.has_model(cfg.model), cfg.model)
+        add("Superton model", model.has_model(cfg.model), cfg.model)
         add("base model", model.has_model(cfg.base_model), cfg.base_model)
         add("embed model", model.has_model(cfg.embed_model), cfg.embed_model)
     hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACEHUB_API_TOKEN") or ""

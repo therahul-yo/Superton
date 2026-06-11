@@ -70,9 +70,7 @@ def looks_memory_specific(query: str) -> bool:
         "resume", "resue", "cv", "pdf", "document", "file",
         "from my", "from his", "fromhis",
     )
-    if any(marker in normalized for marker in personal_markers):
-        return True
-    return "project" in normalized and "my" in normalized
+    return any(marker in normalized for marker in personal_markers)
 
 
 def wants_source_expansion(query: str) -> bool:
@@ -225,26 +223,24 @@ def format_suggestions(raw_hits: list[SearchHit], limit: int = 2) -> str:
 
 def build_system_prompt(*, has_drawers: bool) -> str:
     if has_drawers:
+        # Framed as plain document QA on purpose: small models carry strong
+        # privacy-refusal training, and words like "memory" or "personal
+        # data access" trigger canned "I don't have access" replies even
+        # with the context right there in the prompt.
         return (
-            "You are Miniton, a local assistant in the SuperTon CLI. "
-            "MEMORY DRAWERS from the user's palace are supplied below — the "
-            "user has already given you access to them.\n\n"
-            "Your job:\n"
-            "- Use ONLY the drawers to answer. Quote specific facts from them.\n"
-            "- If asked for all/list projects, scan every supplied drawer and "
-            "list every distinct project you can find.\n"
-            "- For vague questions like 'X details', 'tell me about X', or "
-            "'summary', produce 3-6 concise bullet points that summarize what "
-            "the drawers say about the subject.\n"
-            "- Cite drawer ids inline like [abcd1234] when quoting.\n"
-            "- Never ask for a file, link, or path — the user has already "
-            "ingested it.\n"
-            "- Never say 'I do not have that in memory'. The drawers are "
-            "right here. Read them and answer.\n"
-            "- Keep answers under 8 lines unless the user asks for detail."
+            "You are Superton, a document QA assistant. The user gives you "
+            "excerpts from their own files, then a question. Answer the "
+            "question directly using the excerpts. Quote specific names, "
+            "numbers, and facts. Cite excerpt ids inline like [abcd1234]. "
+            "If asked for all/list items, scan every excerpt and list every "
+            "distinct item you find. "
+            "Never mention access, permissions, or what you can or cannot "
+            "see. Never ask for a file, link, or path. "
+            "If the excerpts lack the answer, say only: not yet in the "
+            "palace. Keep answers under 8 lines unless asked for detail."
         )
     return (
-        "You are Miniton — a small local AI assistant built into the "
+        "You are Superton — a small local AI assistant built into the "
         "SuperTon CLI. You run entirely on the user's machine via Ollama "
         "and answer questions grounded in their personal palace of memories "
         "(notes, documents, past AI-tool conversations). No memory drawers "
@@ -345,9 +341,12 @@ def plan_answer(
     context = _build_context_block(hits)
     system = build_system_prompt(has_drawers=bool(hits))
 
-    if is_meta_question(question):
-        # Clean slate for meta questions — no drawers, no history, so the
-        # small model doesn't repeat its previous reply verbatim.
+    if is_meta_question(question) or hits:
+        # Clean slate for meta questions AND drawer-grounded answers. The
+        # small model parrots its previous reply verbatim when it sees its
+        # own answers in history; with drawers retrieved, the excerpts are
+        # the only context that matters. History still feeds
+        # contextualize_query above, so follow-ups retrieve correctly.
         chat_history: list[dict[str, str]] = []
     else:
         chat_history = [
@@ -356,10 +355,16 @@ def plan_answer(
         ]
 
     if hits:
+        # Bare keyword queries ("rahul college", "commits") make small
+        # models miss the relevant excerpt; phrasing them as a question
+        # reliably focuses the answer.
+        asked = question
+        if "?" not in question and len(query_tokens(question)) <= 3:
+            asked = f"What do the excerpts say about: {question}? Give the specific facts."
         prompt = "\n\n".join([
-            f"Memory drawers:\n\n{context}",
-            f"User message: {question}",
-            "Write a concise answer, not a dump of the context.",
+            f"FILE EXCERPTS:\n\n{context}",
+            f"QUESTION: {asked}",
+            "Answer from the excerpts above, concisely — not a dump of the context.",
         ])
     else:
         prompt = question
@@ -400,7 +405,7 @@ def fallback_answer(plan: PlannedAnswer) -> str:
             "I found related memory, but the model backend is unavailable. "
             f"Top match: [{top.drawer.id[:8]}] {Path(top.drawer.source).name}"
         )
-    return "Miniton is not available. Run `superton init` to start/build the local model."
+    return "Superton is not available. Run `superton init` to start/build the local model."
 
 
 def answer(
@@ -439,5 +444,5 @@ def answer(
 
     text = "".join(buf).strip()
     if not text:
-        text = "I found related memory, but Miniton returned an empty answer."
+        text = "I found related memory, but Superton returned an empty answer."
     return ChatTurn(question=question, answer=text, hits=plan.hits)

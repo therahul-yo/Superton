@@ -36,27 +36,24 @@ def test_chunk_long_text():
     assert all(len(c) <= 600 for c in chunks)
 
 
-def test_model_defaults_are_miniton(cfg: Config):
-    assert cfg.model == "miniton"
-    assert cfg.base_model == "qwen3.5:4b"
-    assert cfg.model_profile == "proton"
+def test_model_defaults_are_superton(cfg: Config):
+    assert cfg.model == "superton"
+    assert cfg.base_model == "openbmb/minicpm5"
     assert cfg.memory_backend == "sqlite"
 
 
-def test_model_profile_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_base_model_persists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from superton.config import Config, write_settings
 
     monkeypatch.setenv("SUPERTON_HOME", str(tmp_path))
     write_settings(
         tmp_path,
-        model_profile="neutron",
-        base_model="qwen3.5:9b",
-        hf_model="Qwen/Qwen3.5-9B",
+        base_model="openbmb/minicpm5:fp16",
+        hf_model="openbmb/MiniCPM5-1B",
     )
     cfg = Config.load()
-    assert cfg.model_profile == "neutron"
-    assert cfg.base_model == "qwen3.5:9b"
-    assert cfg.hf_model == "Qwen/Qwen3.5-9B"
+    assert cfg.base_model == "openbmb/minicpm5:fp16"
+    assert cfg.hf_model == "openbmb/MiniCPM5-1B"
 
 
 def test_modelfile_render_uses_configured_base(cfg: Config, tmp_path: Path):
@@ -65,7 +62,7 @@ def test_modelfile_render_uses_configured_base(cfg: Config, tmp_path: Path):
     template = tmp_path / "Modelfile"
     template.write_text("FROM placeholder\nSYSTEM \"\"\"hello\"\"\"\n", encoding="utf-8")
     rendered = _render_modelfile(template, cfg)
-    assert rendered.read_text(encoding="utf-8").startswith("FROM qwen3.5:4b\n")
+    assert rendered.read_text(encoding="utf-8").startswith("FROM openbmb/minicpm5\n")
 
 
 def test_confirm_pull_yes_skips_prompt():
@@ -101,8 +98,8 @@ def test_model_stop_calls_ollama(cfg: Config, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("superton.model.subprocess.run", fake_run)
     model = Model(cfg)
-    assert model.stop("miniton") is True
-    assert calls == [(["ollama", "stop", "miniton"], False)]
+    assert model.stop("superton") is True
+    assert calls == [(["ollama", "stop", "superton"], False)]
     model.close()
 
 
@@ -151,7 +148,7 @@ def test_model_backend_uses_cached_tags(cfg: Config):
             pass
 
         def json(self):
-            return {"models": [{"name": "miniton:latest"}]}
+            return {"models": [{"name": "superton:latest"}]}
 
     class Client:
         def __init__(self):
@@ -298,7 +295,7 @@ def test_shell_expands_resume_project_context(cfg: Config):
             yield "ok"
 
     mem = Memory(cfg)
-    source = "/tmp/rahul_projects_resume.pdf"
+    source = "/tmp/alice_projects_resume.pdf"
     for i in range(1, 7):
         mem.add(text=f"Project {i}: built feature {i}.", source=source)
 
