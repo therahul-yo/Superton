@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from rich.text import Text
 
 from superton import ui
@@ -106,3 +107,77 @@ def test_spinner_yields_set_status_callable():
     with ui.spinner("test") as set_status:
         assert callable(set_status)
         set_status("updated")
+
+
+# --- ui polish pass: theme cursors, tempo, score bars, reveal cascade ---------
+
+
+@pytest.mark.parametrize("name", list(ui.THEMES))
+def test_theme_has_cursor_and_tempo(name):
+    t = ui.THEMES[name]
+    assert t.cursor, f"{name} theme is missing a cursor glyph"
+    assert t.tempo > 0, f"{name} theme tempo must be positive"
+
+
+def test_theme_cursors_are_distinct_enough():
+    cursors = {t.cursor for t in ui.THEMES.values()}
+    assert len(cursors) >= 3  # per-theme identity, not one shared glyph
+
+
+def test_typing_cursor_uses_theme_glyph():
+    assert ui.theme().cursor in ui.typing_cursor()
+
+
+def test_typing_cursor_explicit_char_override():
+    assert "|" in ui.typing_cursor("|")
+
+
+def test_score_bar_full_and_empty():
+    full = ui.score_bar(1.0)
+    empty = ui.score_bar(0.0)
+    assert "▰" in full.plain and "▱" not in full.plain
+    assert "▱" in empty.plain and "▰" not in empty.plain
+
+
+def test_score_bar_clamps_out_of_range():
+    assert ui.score_bar(7.5).plain == ui.score_bar(1.0).plain
+    assert ui.score_bar(-2.0).plain == ui.score_bar(0.0).plain
+
+
+def test_reveal_cards_prints_everything(capsys):
+    ui.reveal_cards([Text("alpha"), Text("beta"), Text("gamma")])
+    out = capsys.readouterr().out
+    assert "alpha" in out and "beta" in out and "gamma" in out
+
+
+def test_reveal_cards_no_sleep_when_not_terminal(monkeypatch):
+    import time as _time
+
+    called = []
+    monkeypatch.setattr(_time, "sleep", lambda *_: called.append(1))
+    ui.reveal_cards([Text("a"), Text("b")])
+    assert not called  # non-TTY path must not stagger
+
+
+def test_rule_titled_carries_theme_glyph(capsys):
+    ui.rule("memory")
+    out = capsys.readouterr().out
+    assert ui.theme().prompt_glyph in out
+    assert "memory" in out
+
+
+def test_rule_untitled_has_no_glyph(capsys):
+    ui.rule()
+    out = capsys.readouterr().out
+    assert ui.theme().prompt_glyph not in out
+
+
+def test_flash_is_noop_when_not_terminal(capsys):
+    ui.flash(Text("switched"))
+    assert capsys.readouterr().out == ""
+
+
+def test_stream_answer_non_tty_has_no_cursor(capsys):
+    answer = ui.stream_answer(iter(["hello ", "world"]))
+    assert answer == "hello world"
+    assert ui.theme().cursor not in capsys.readouterr().out

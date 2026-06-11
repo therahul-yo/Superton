@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 import typer
+from rich.text import Text
 
 from superton import __version__, errors, ui
 from superton.blackhole import static_frame
@@ -825,9 +826,11 @@ def ask(
         for h in hits:
             preview = h.drawer.text.replace("\n", " ")[:80]
             score_style = ui.score_color(h.score)
+            score_cell = Text(f"{h.score:.2f} ", style=score_style)
+            score_cell.append_text(ui.score_bar(h.score))
             table.add_row(
                 ui.style_id(h.drawer.id[:8]),
-                f"[{score_style}]{h.score:.2f}[/]",
+                score_cell,
                 ui.style_path(Path(h.drawer.source).name),
                 preview,
             )

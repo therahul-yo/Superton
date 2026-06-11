@@ -65,6 +65,12 @@ class Theme:
     bullet: str
     spinner: str = "dots"
     rule_char: str = "─"
+    # Streaming-cursor glyph; each theme carries its own so a screenshot of
+    # a mid-stream answer is identifiable at a glance.
+    cursor: str = "▎"
+    # Animation tempo multiplier: >1 runs spinner phase rotation faster
+    # (sharper themes), <1 slower (drifting themes).
+    tempo: float = 1.0
 
 
 # Four hand-tuned themes. Colors are hex where we want fine control and
@@ -87,6 +93,8 @@ THEMES: dict[str, Theme] = {
         bullet="▸",
         spinner="dots",
         rule_char="─",
+        cursor="▎",
+        tempo=1.0,
     ),
     "crimson": Theme(
         name="crimson",
@@ -105,6 +113,8 @@ THEMES: dict[str, Theme] = {
         bullet="›",
         spinner="line",
         rule_char="·",
+        cursor="▌",
+        tempo=1.15,
     ),
     "void": Theme(
         name="void",
@@ -123,6 +133,8 @@ THEMES: dict[str, Theme] = {
         bullet="›",
         spinner="dots12",
         rule_char="╌",
+        cursor="▖",
+        tempo=0.85,
     ),
     "ash": Theme(
         name="ash",
@@ -141,6 +153,8 @@ THEMES: dict[str, Theme] = {
         bullet="·",
         spinner="line",
         rule_char="─",
+        cursor="_",
+        tempo=1.0,
     ),
 }
 
@@ -255,15 +269,18 @@ def blank() -> None:
 
 def rule(title: str | None = None) -> None:
     """Two-tone gradient rule: bright near the left edge, fading into the
-    theme's rule color. Gives each theme a distinctive horizontal line."""
+    theme's rule color. Titled rules carry the theme's prompt glyph as a
+    signature (`── ◉ memory ────`) so each theme is identifiable even in
+    a plain screenshot. Untitled rules stay glyph-free and quiet."""
     width = max(_console.width, 20)
     char = _current.rule_char
     head = max(6, width // 6)
     line = Text()
     line.append(char * head, style=_current.primary)
     if title:
+        line.append(f" {_current.prompt_glyph}", style=_current.secondary)
         line.append(f" {title} ", style=f"bold {_current.primary}")
-        head += len(title) + 2
+        head += len(title) + len(_current.prompt_glyph) + 3
     line.append(char * max(0, width - head), style=_current.rule)
     _console.print(line)
 
@@ -367,8 +384,10 @@ def spinner(
 
     `phases`, when supplied, is cycled in a background daemon thread —
     the spinner text rotates through the verbs every `phase_interval`
-    seconds. Calling `set_status` mid-stream takes over and overrides
-    the cycle until the next phase tick.
+    seconds (scaled by the theme's `tempo`, so crimson ticks sharper and
+    void drifts slower). After ~8 s of waiting the spinner's color starts
+    alternating primary ↔ secondary on each phase tick so long waits
+    visibly stay alive instead of freezing into wallpaper.
     """
     if not _console.is_terminal:
         def _noop(_label: str) -> None:
@@ -378,14 +397,23 @@ def spinner(
         return
 
     phase_list = list(phases) if phases else None
+    interval = phase_interval / max(_current.tempo, 0.1)
     with _console.status(f"[{_current.muted}]{label}[/]", spinner=_current.spinner, spinner_style=_current.primary) as status:
         stop = threading.Event()
         cycler: threading.Thread | None = None
         if phase_list:
             def _cycle() -> None:
                 idx = 0
-                while not stop.wait(phase_interval):
-                    status.update(f"[{_current.muted}]{phase_list[idx % len(phase_list)]}…[/]")
+                started = time.monotonic()
+                while not stop.wait(interval):
+                    text = f"[{_current.muted}]{phase_list[idx % len(phase_list)]}…[/]"
+                    if time.monotonic() - started > 8.0:
+                        # Long wait: breathe the spinner color so the user
+                        # can tell the process is alive, not hung.
+                        spin_style = _current.secondary if idx % 2 else _current.primary
+                        status.update(text, spinner_style=spin_style)
+                    else:
+                        status.update(text)
                     idx += 1
 
             cycler = threading.Thread(target=_cycle, daemon=True)
@@ -732,15 +760,22 @@ def git_info(start: Path | None = None) -> tuple[str | None, str | None]:
 # --- micro-animations ---------------------------------------------------------
 
 def flash(content: Any, duration: float = 0.2) -> None:
-    """Briefly display `content` in a transient Live frame and clear it.
+    """Two-pulse confirmation blink: show → blank beat → show, then clear.
 
-    Used for 200 ms confirmation animations on theme/model switches.
-    Non-terminal contexts are a no-op to avoid noise.
+    The double pulse (≈0.12s on, 0.08s off, 0.18s on) reads as a deliberate
+    "confirmed" wink rather than a flicker that's easy to miss. Used on
+    theme/model switches. Non-terminal contexts are a no-op to avoid noise.
+    `duration` scales the whole pattern (0.2 = the classic timing).
     """
     if not _console.is_terminal or duration <= 0:
         return
-    with Live(content, console=_console, refresh_per_second=24, transient=True):
-        time.sleep(duration)
+    scale = duration / 0.2
+    with Live(content, console=_console, refresh_per_second=24, transient=True) as live:
+        time.sleep(0.12 * scale)
+        live.update(Text(""))
+        time.sleep(0.08 * scale)
+        live.update(content)
+        time.sleep(0.18 * scale)
 
 
 def header(cfg, stats: dict, cwd: Path | None = None) -> None:
@@ -911,9 +946,38 @@ def citations(hits) -> None:
             _console.print(row)
 
 
-def typing_cursor(char: str = "▎") -> str:
-    """Inline styled cursor for streaming output."""
-    return f"[{_current.muted}]{char}[/]"
+def typing_cursor(char: str | None = None) -> str:
+    """Inline styled cursor for streaming output. Defaults to the active
+    theme's signature cursor glyph."""
+    return f"[{_current.muted}]{char or _current.cursor}[/]"
+
+
+def reveal_cards(renderables: list[Any], *, interval: float = 0.045) -> None:
+    """Print renderables one-by-one with a tiny stagger so result lists
+    arrive as a cascade instead of one wall of text.
+
+    Deliberately Live-free (plain prints + sleeps) so there is zero
+    flicker risk on slow terminals. Non-TTY prints everything at once.
+    """
+    on_tty = _console.is_terminal
+    for idx, renderable in enumerate(renderables):
+        if on_tty and idx:
+            time.sleep(interval)
+        _console.print(renderable)
+
+
+def score_bar(score: float, *, width: int = 3) -> Text:
+    """Mini similarity bar (`▰▰▱`) tinted by score_color().
+
+    Shares ram_bar's filled/empty glyph language so 'how full' reads the
+    same everywhere in the CLI.
+    """
+    clamped = min(1.0, max(0.0, float(score)))
+    filled = round(clamped * width)
+    out = Text()
+    out.append("▰" * filled, style=score_color(clamped))
+    out.append("▱" * (width - filled), style=_current.rule)
+    return out
 
 
 # --- staged flow, markdown, score coloring, next-steps card -------------------
@@ -1073,8 +1137,18 @@ def ready_card(cfg, stats: dict) -> None:
     Replaces the older next_steps_card with a more deliberate finale:
     SuperTon wordmark, a row of status pills, then two compact
     command-and-hint columns. Designed to feel like a landing moment,
-    not a help screen.
+    not a help screen. On a TTY the status dot pulses muted → secondary
+    → orange before the card lands — same 3-frame heartbeat pattern as
+    stage_ok(), so the finale registers as a moment, not just output.
     """
+    if _console.is_terminal:
+        with Live(Text(""), console=_console, refresh_per_second=30, transient=True) as live:
+            for st in (_current.muted, _current.secondary, INSTALL_ORANGE):
+                beat = Text("  ")
+                beat.append("●", style=st)
+                beat.append(" ready", style=_current.muted)
+                live.update(beat)
+                time.sleep(0.07)
     body = Text()
     body.append("SuperTon is ready.\n", style=f"bold {INSTALL_ORANGE}")
     body.append("\n")
@@ -1344,7 +1418,8 @@ def stream_answer(token_iter, label: str = "Superton") -> str:
          keeps animating even while `model.generate()` blocks on the
          first network round-trip.
       2. *streaming* — once the first token arrives, the spinner is
-         dropped and tokens append live with a muted cursor (`▎`).
+         dropped and tokens append live with the theme's signature
+         cursor glyph, breathing muted ↔ secondary every ~0.4 s.
       3. *retire* — cursor fades muted → rule → erased over ~150 ms so
          the answer doesn't end on a hard cut.
 
@@ -1380,6 +1455,8 @@ def stream_answer(token_iter, label: str = "Superton") -> str:
             style=_current.primary,
         )
         first_token_seen = False
+        cursor_glyph = _current.cursor
+        stream_started = time.monotonic()
         with Live(
             thinking,
             console=_console,
@@ -1397,9 +1474,14 @@ def stream_answer(token_iter, label: str = "Superton") -> str:
                     first_token_seen = True
                     running = "".join(buf)
                     t = Text(running)
-                    # Cursor stays muted so streamed content reads as the
-                    # focus of the screen, not a glowing tail.
-                    t.append("▎", style=_current.muted)
+                    # Breathing cursor: alternate muted ↔ secondary every
+                    # ~0.4 s, keyed off the wall clock so it costs no extra
+                    # Live updates beyond the token ticks already happening.
+                    breathe = int((time.monotonic() - stream_started) / 0.4) % 2
+                    t.append(
+                        cursor_glyph,
+                        style=_current.secondary if breathe else _current.muted,
+                    )
                     live.update(t)
                 elif done.is_set() and tok_q.empty():
                     break
@@ -1412,7 +1494,7 @@ def stream_answer(token_iter, label: str = "Superton") -> str:
                 running = "".join(buf)
                 for style in (_current.muted, _current.rule):
                     faded = Text(running)
-                    faded.append("▎", style=style)
+                    faded.append(cursor_glyph, style=style)
                     live.update(faded)
                     time.sleep(0.06)
                 live.update(Text(running))
