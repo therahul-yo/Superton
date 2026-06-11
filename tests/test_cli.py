@@ -404,3 +404,21 @@ def test_data_paths_cover_home_and_caches(env: Path):
     assert len(paths) == len(set(paths))
     assert any("chroma" in str(p) for p in paths)
     assert any("superton" in str(p).lower() for p in paths)
+
+
+def test_warm_embedder_noop_when_semantic_disabled(tmp_path: Path, monkeypatch):
+    from superton.config import Config
+    from superton.memory import Memory
+
+    monkeypatch.setenv("SUPERTON_HOME", str(tmp_path))
+    monkeypatch.setenv("SUPERTON_MEMORY_BACKEND", "sqlite")
+    mem = Memory(Config.load())
+    # Semantic backend off -> warmup is a no-op that reports ready.
+    assert mem.warm_embedder() is True
+    mem.close()
+
+
+def test_init_preflight_mentions_semantic_not_ollama_embed(env: Path):
+    result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
+    assert result.exit_code == 0
+    assert "nomic-embed-text" not in result.stdout

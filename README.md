@@ -319,12 +319,13 @@ This removes:
 - SuperTon palace data and config from the user data directory
 - the `superton` Ollama model
 - the configured base model, `openbmb/minicpm5`
-- the embedding model, `nomic-embed-text`
+- a legacy `nomic-embed-text` Ollama model, if a previous version pulled one
+- the cached semantic embedding model and ChromaDB caches
 - the installed `superton` CLI tool when it was installed through uv, pipx, or pip
 
 Use `--keep-data` to keep the palace, `--keep-models` to skip all Ollama model
 removal, or `--keep-base-models` to remove only `superton` while preserving the
-base and embedding models.
+base models.
 
 ## Architecture
 

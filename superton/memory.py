@@ -522,6 +522,31 @@ class Memory:
         self._delete_semantic(drawer_id)
         return cur.rowcount > 0
 
+    def warm_embedder(self) -> bool:
+        """Force the semantic backend's embedding model to download now.
+
+        MemPalace/Chroma lazy-downloads its ONNX embedding model (~80 MB)
+        on the first ingest, which otherwise interrupts the user mid-chat
+        with a surprise progress bar. Calling this during `superton init`
+        moves that download into the setup flow where it belongs. Returns
+        True if the embedder is ready (or semantic is disabled), False on
+        failure.
+        """
+        if not self._semantic_enabled():
+            return True
+        col = self._semantic(create=True)
+        if col is None:
+            return False
+        try:
+            # A throwaway query triggers the embedding-function load, which
+            # downloads and caches the ONNX model on first call.
+            col.query(query_texts=["warmup"], n_results=1)
+            return True
+        except Exception as e:
+            self._semantic_error = str(e)
+            log.warning("embedder warmup failed: %s", e)
+            return False
+
     def reindex_semantic(self, *, batch_size: int = 64) -> int:
         """Mirror every SQLite drawer into the semantic index.
 
