@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 once it reaches 1.0.0. Until then, every minor bump may include breaking
 changes — they are called out in the **Breaking** section.
 
+## 0.4.0-beta.1 — 2026-06-11
+
+### Changed
+- **Single default model.** The photon/proton/neutron Qwen 3.5 profile
+  system is gone. SuperTon now builds one model — `superton` — from
+  `openbmb/minicpm5` (1B params, ~700 MB, 128K context). Override the
+  base with `SUPERTON_BASE_MODEL`; HF fallback is `openbmb/MiniCPM5-1B`.
+- **Miniton renamed to Superton** across the CLI, prompts, and docs.
+  The Ollama tag is now `superton` (was `miniton`).
+- **New dark theme set.** `ember` (burnt orange, default), `crimson`,
+  `void`, and `ash` replace nebula/mono/solar/frost. Each theme carries
+  its own prompt glyph, spinner style, and gradient rule character.
+- **Answer prompts reframed as document QA.** Small models refuse
+  "memory / personal data" wording even with context supplied; the new
+  framing eliminates canned refusals. Chat history is no longer passed
+  to drawer-grounded answers (stops verbatim parroting) and terse
+  keyword queries are auto-phrased as questions.
+
+### Added
+- **Arrow-key theme picker** in `superton init` — ↑/↓ with live color
+  preview, Enter to select; falls back to a typed prompt without a TTY.
+- **Install-flow micro-interactions** — stage progress dots, animated
+  stage ticks, theme-colored spinners.
+- **Full uninstall sweep.** `superton uninstall` now removes the
+  chromadb cache, SuperTon's cache dir, and the default data dir even
+  when `SUPERTON_HOME` points elsewhere.
+
+### Fixed
+- Crash on shell launch (missing `write_settings` import).
+- `ui.card` printed Rich markup literally in string bodies.
+- Over-aggressive pre-model refusal on "my … project" questions.
+- Landing page: hero button replaced with an Install link; invisible
+  white-on-white button text on hover.
+
 ## [Unreleased]
 
 ### Removed (BREAKING)
