@@ -40,12 +40,16 @@ META_PHRASES = chat.META_PHRASES
 STOPWORDS = chat.STOPWORDS
 COMMAND_HELP = {
     "/add": "ingest a file or directory",
+    "/clear": "reset the conversation",
     "/doctor": "show runtime health",
     "/forget-source": "remove all drawers from a source",
     "/help": "show shortcuts",
     "/import": "pull conversations from another AI tool",
+    "/list": "show recent drawers",
     "/model": "show model configuration",
+    "/note": "capture a quick note",
     "/quit": "exit SuperTon",
+    "/recent": "show recently added sources",
     "/refresh": "reingest a source and remove stale chunks",
     "/reindex": "rebuild semantic index",
     "/search": "search memory",
@@ -53,9 +57,99 @@ COMMAND_HELP = {
     "/stats": "show palace stats",
     "/stop": "stop Superton without quitting",
     "/theme": "show/switch CLI theme",
+    "/why": "toggle the retrieval trace under answers",
 }
-ANSWER_CONTEXT_DRAWERS = 10
-ANSWER_DRAWER_CHARS = 1200
+
+# Grouped view of COMMAND_HELP used by /help so the cheatsheet reads as a
+# small map of the shell instead of one long line.
+COMMAND_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("chat", [
+        ("/why", "toggle retrieval trace under answers"),
+        ("/clear", "reset the conversation"),
+        ("/stop", "stop Superton without quitting"),
+        ("/quit", "exit SuperTon (^D works too)"),
+    ]),
+    ("ingest", [
+        ("/add <path>", "ingest a file or directory"),
+        ("/note <text>", "capture a quick note"),
+        ("/import <tool>", "claude-code · chatgpt <path> · cursor · amp"),
+        ("/refresh <path>", "reingest a source, drop stale chunks"),
+    ]),
+    ("explore", [
+        ("/search <query>", "search memory"),
+        ("/list", "show recent drawers"),
+        ("/recent", "show recently added sources"),
+        ("/sources", "list indexed sources"),
+        ("/stats", "show palace stats"),
+    ]),
+    ("system", [
+        ("/theme [name]", "show or switch CLI theme"),
+        ("/model", "show model configuration"),
+        ("/doctor", "show runtime health"),
+        ("/reindex", "rebuild semantic index"),
+        ("/forget-source <name>", "remove all drawers from a source"),
+    ]),
+]
+
+# Every spelling the REPL accepts as a command — used to catch typos before
+# they fall through to the model as a chat message.
+KNOWN_COMMANDS = set(COMMAND_HELP) | {"/exit", "/quit", "/help", "/clear"}
+
+# Usage lines for commands that require an argument, shown when the user
+# types the bare command.
+COMMAND_USAGE = {
+    "/add": "/add <path>",
+    "/forget-source": "/forget-source <name>",
+    "/import": "/import claude-code | chatgpt <path> | cursor | amp",
+    "/note": "/note <text to remember>",
+    "/refresh": "/refresh <path>",
+    "/search": "/search <query>",
+}
+
+
+def _suggest_command(text: str) -> str | None:
+    """Closest known slash command for a mistyped one, or None.
+
+    Only the command head (first whitespace-separated token) is matched,
+    so `/serach foo bar` still suggests `/search`.
+    """
+    import difflib
+
+    head = text.split()[0] if text.split() else text
+    matches = difflib.get_close_matches(head, sorted(KNOWN_COMMANDS), n=1, cutoff=0.6)
+    return matches[0] if matches else None
+
+
+def _path_completion_candidates(fragment: str, *, limit: int = 30) -> list[tuple[str, str]]:
+    """Filesystem completions for a partial path typed after /add or /refresh.
+
+    Returns `(insert_text, display)` pairs; `insert_text` replaces the
+    final path component the user is typing. Directories get a trailing
+    slash so completion can be chained. Hidden entries only show up once
+    the fragment's basename itself starts with a dot.
+    """
+    raw = fragment.strip()
+    expanded = Path(raw).expanduser() if raw else Path(".")
+    if raw.endswith(("/", "\\")) or raw == "":
+        base, prefix = (expanded if raw else Path.cwd()), ""
+    else:
+        base, prefix = expanded.parent, expanded.name
+    try:
+        entries = sorted(base.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    except OSError:
+        return []
+    out: list[tuple[str, str]] = []
+    for entry in entries:
+        name = entry.name
+        if not name.startswith(prefix):
+            continue
+        if name.startswith(".") and not prefix.startswith("."):
+            continue
+        display = name + "/" if entry.is_dir() else name
+        out.append((display, display))
+        if len(out) >= limit:
+            break
+    return out
 
 
 class _Status:
@@ -141,6 +235,17 @@ def _prompt(status: _Status | None = None) -> str:
                                 start_position=-len(word),
                                 display_meta=theme_obj.label,
                             )
+                    return
+                if parts and parts[0] in {"/add", "/refresh"} and " " in text:
+                    # Live filesystem completion for the path argument.
+                    fragment = text.split(" ", 1)[1]
+                    tail = fragment.rsplit("/", 1)[-1]
+                    for insert, display in _path_completion_candidates(fragment):
+                        yield Completion(
+                            insert,
+                            start_position=-len(tail),
+                            display=display,
+                        )
                     return
                 if " " in text:
                     return
@@ -435,6 +540,91 @@ def _print_themes(cfg: Config) -> None:
     ui.blank()
 
 
+def _print_help() -> None:
+    """Grouped, themed cheatsheet for `/help` / `?`.
+
+    One compact table per command group — mirrors the grouped panels in
+    `superton --help` so both surfaces teach the same map.
+    """
+    from rich.table import Table
+    from rich.text import Text
+
+    t = ui.theme()
+    table = Table(show_header=False, box=None, pad_edge=False, padding=(0, 2, 0, 0))
+    table.add_column(no_wrap=True)
+    table.add_column(no_wrap=True)
+    table.add_column()
+    for gi, (group, commands) in enumerate(COMMAND_GROUPS):
+        if gi:
+            table.add_row("", "", "")
+        for ci, (cmd, desc) in enumerate(commands):
+            head, _, arg = cmd.partition(" ")
+            cmd_text = Text()
+            cmd_text.append(head, style=f"bold {t.primary}")
+            if arg:
+                cmd_text.append(f" {arg}", style=t.secondary)
+            table.add_row(
+                Text(group, style=t.muted) if ci == 0 else "",
+                cmd_text,
+                Text(desc, style=t.muted),
+            )
+    ui.blank()
+    ui.print_table(table)
+    ui.blank()
+    ui.hint("paste any file path to ingest it · just type to chat")
+    ui.blank()
+
+
+def _print_drawers(mem: Memory, *, limit: int = 10) -> None:
+    """Recent drawers — shell twin of `superton list`."""
+    rows = mem.all(limit=limit)
+    ui.blank()
+    if not rows:
+        ui.hint("no drawers yet — /add a file or paste a path")
+        ui.blank()
+        return
+    table = ui.make_table("id", "wing/room", "source", "preview")
+    for d in rows:
+        preview = d.text.replace("\n", " ")[:70]
+        table.add_row(
+            ui.style_id(d.id[:8]),
+            f"{d.wing}/{d.room}",
+            ui.style_path(Path(d.source).name),
+            preview,
+        )
+    ui.print_table(table)
+    ui.blank()
+
+
+def _print_recent(mem: Memory, *, days: int = 7, limit: int = 15) -> None:
+    """Recently added sources — shell twin of `superton recent`."""
+    import time
+
+    rows = mem.recent_sources(since=time.time() - days * 86400, limit=limit)
+    ui.blank()
+    if not rows:
+        ui.hint(f"nothing added in the last {days} day(s)")
+        ui.blank()
+        return
+    table = ui.make_table("drawers", "latest", "source")
+    for row in rows:
+        latest = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(row["latest"])))
+        table.add_row(str(row["drawers"]), latest, row["source"])
+    ui.print_table(table)
+    ui.blank()
+
+
+def _capture_note(mem: Memory, text: str) -> None:
+    """Quick note capture — shell twin of `superton note`."""
+    import time
+
+    source = f"note:{time.strftime('%Y%m%d-%H%M%S')}"
+    drawer = mem.add(text=text, source=source, wing="notes", room="daily", metadata={"kind": "note"})
+    ui.blank()
+    ui.ok(f"captured note {drawer.id[:8]}", source)
+    ui.blank()
+
+
 def _run_import(mem: Memory, spec: str) -> None:
     """Handle `/import <source> [path]` from inside the shell.
 
@@ -542,12 +732,16 @@ def _answer(
     model: Model,
     question: str,
     history: list[tuple[str, str]] | None = None,
+    *,
+    show_why: bool = False,
 ) -> str:
     """Render a chat turn through the shell's Rich console.
 
     The retrieval / refusal / prompt-building logic lives in `superton.chat`.
     This function is the *display* half: it takes the planned answer,
     streams tokens through `ui.stream_answer`, and prints citations.
+    With `show_why=True` (the `/why` toggle) the retrieval trace is
+    rendered before the answer streams.
     """
     # Retrieval can take a few hundred ms on large palaces — show a
     # spinner so the pause between Enter and the Superton header doesn't
@@ -558,6 +752,8 @@ def _answer(
     if plan.refusal is not None:
         _print_assistant(plan.refusal)
         return plan.refusal
+    if show_why and plan.hits:
+        _print_search_hits(plan.hits[:5])
 
     try:
         answer = ui.stream_answer(chat.stream_answer(model, plan))
@@ -585,6 +781,7 @@ def run() -> None:
     model = Model(cfg)
     status = _Status(cfg, mem, model)
     history: list[tuple[str, str]] = []
+    show_why = False
     try:
         _print_intro(cfg, mem)
         while True:
@@ -599,13 +796,32 @@ def run() -> None:
                 _stop_active_model(model, cfg, quiet=True)
                 break
             if text in {"/help", "?"}:
-                ui.console().print(
-                    "ingest: /add <path> · /import claude-code|chatgpt|cursor|amp · "
-                    "/refresh <path>\n"
-                    "search: /search <query> · /sources · /forget-source <name>\n"
-                    "config: /model · /theme · /reindex\n"
-                    "system: /doctor · /stats · /clear · /stop · /quit"
-                )
+                _print_help()
+                continue
+            if text == "/why":
+                show_why = not show_why
+                ui.blank()
+                if show_why:
+                    ui.ok("retrieval trace on", "each answer will show the drawers it drew from")
+                else:
+                    ui.ok("retrieval trace off")
+                ui.blank()
+                continue
+            if text == "/list":
+                _print_drawers(mem)
+                continue
+            if text == "/recent":
+                _print_recent(mem)
+                continue
+            if text == "/note" or text.startswith("/note "):
+                body = text.removeprefix("/note").strip()
+                if not body:
+                    ui.blank()
+                    ui.hint("usage: /note <text to remember>")
+                    ui.blank()
+                    continue
+                _capture_note(mem, body)
+                status.refresh(cfg)
                 continue
             if text == "/stop":
                 _stop_active_model(model, cfg)
@@ -738,7 +954,25 @@ def run() -> None:
                 ui.ok(f"ingested {drawers} drawers", suffix)
                 ui.blank()
                 continue
-            _answer_text = _answer(mem, model, text, history=history)
+            if text.startswith("/"):
+                # A slash prefix means the user wanted a command, not a chat
+                # turn — never forward typos to the model. Point at the
+                # missing argument or suggest the closest known command.
+                head = text.split()[0]
+                ui.blank()
+                if head in KNOWN_COMMANDS:
+                    ui.warn(f"{head} needs an argument")
+                    ui.hint(f"usage: [bold]{COMMAND_USAGE.get(head, head + ' <arg>')}[/bold]")
+                else:
+                    suggestion = _suggest_command(text)
+                    if suggestion:
+                        ui.warn(f"unknown command: {head}", f"did you mean {suggestion}?")
+                    else:
+                        ui.warn(f"unknown command: {head}")
+                    ui.hint("type [bold]/help[/bold] to see every command")
+                ui.blank()
+                continue
+            _answer_text = _answer(mem, model, text, history=history, show_why=show_why)
             history.append(("user", text))
             history.append(("assistant", _answer_text))
             # Bound the ring buffer.

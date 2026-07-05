@@ -110,8 +110,8 @@ class Config:
 
         theme = os.environ.get("SUPERTON_THEME", settings.get("theme", "ember"))
         # ui.THEMES is the source of truth, but importing ui here would create
-        # a load-order cycle. Whitelist the four shipped themes inline.
-        if theme not in {"ember", "crimson", "void", "ash"}:
+        # a load-order cycle. Whitelist the shipped themes inline.
+        if theme not in {"ember", "crimson", "void", "ash", "aurora"}:
             log.warning("unknown theme=%r, falling back to 'ember'", theme)
             theme = "ember"
 

@@ -185,3 +185,73 @@ def test_path_from_input_returns_none_for_question_text():
 
 def test_path_from_input_returns_none_for_nonexistent_path():
     assert _path_from_input("/definitely/not/a/real/path/anywhere.xyz") is None
+
+
+# --- slash-command typo suggestions + path completion ---------------------------
+
+
+def test_suggest_command_fixes_close_typo():
+    from superton.shell import _suggest_command
+
+    assert _suggest_command("/serach auth") == "/search"
+    assert _suggest_command("/them") == "/theme"
+    assert _suggest_command("/impotr claude-code") == "/import"
+
+
+def test_suggest_command_returns_none_for_garbage():
+    from superton.shell import _suggest_command
+
+    assert _suggest_command("/zzzqqq") is None
+
+
+def test_known_commands_cover_command_help():
+    from superton.shell import COMMAND_HELP, KNOWN_COMMANDS
+
+    assert set(COMMAND_HELP) <= KNOWN_COMMANDS
+
+
+def test_command_groups_only_reference_known_commands():
+    from superton.shell import COMMAND_GROUPS, KNOWN_COMMANDS
+
+    heads = {
+        cmd.split()[0]
+        for _, commands in COMMAND_GROUPS
+        for cmd, _ in commands
+    }
+    assert heads <= KNOWN_COMMANDS
+
+
+def test_path_completion_lists_directory(tmp_path):
+    from superton.shell import _path_completion_candidates
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "readme.md").write_text("x")
+    completions = dict(_path_completion_candidates(f"{tmp_path}/"))
+    assert "docs/" in completions
+    assert "readme.md" in completions
+
+
+def test_path_completion_filters_by_prefix(tmp_path):
+    from superton.shell import _path_completion_candidates
+
+    (tmp_path / "notes.md").write_text("x")
+    (tmp_path / "other.md").write_text("x")
+    names = [text for text, _ in _path_completion_candidates(f"{tmp_path}/no")]
+    assert names == ["notes.md"]
+
+
+def test_path_completion_hides_dotfiles_unless_asked(tmp_path):
+    from superton.shell import _path_completion_candidates
+
+    (tmp_path / ".secret").write_text("x")
+    (tmp_path / "visible.md").write_text("x")
+    plain = [text for text, _ in _path_completion_candidates(f"{tmp_path}/")]
+    assert ".secret" not in plain
+    dotted = [text for text, _ in _path_completion_candidates(f"{tmp_path}/.se")]
+    assert ".secret" in dotted
+
+
+def test_path_completion_bad_directory_is_empty():
+    from superton.shell import _path_completion_candidates
+
+    assert _path_completion_candidates("/definitely/not/here/") == []

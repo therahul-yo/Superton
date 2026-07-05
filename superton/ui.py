@@ -73,7 +73,7 @@ class Theme:
     tempo: float = 1.0
 
 
-# Four hand-tuned themes. Colors are hex where we want fine control and
+# Five hand-tuned themes. Colors are hex where we want fine control and
 # named rich colors (e.g. "grey50") where terminal remapping is desirable.
 THEMES: dict[str, Theme] = {
     "ember": Theme(
@@ -156,6 +156,26 @@ THEMES: dict[str, Theme] = {
         cursor="_",
         tempo=1.0,
     ),
+    "aurora": Theme(
+        name="aurora",
+        label="teal on black · northern lights",
+        primary="#2DD4BF",
+        secondary="#99F6E4",
+        muted="#4F7A75",
+        success="#5EEAD4",
+        warning="#FBBF24",
+        error="#FF4D6D",
+        info="#99F6E4",
+        neutral="#E9FFFB",
+        rule="#134E4A",
+        prompt="#2DD4BF",
+        prompt_glyph="❖",
+        bullet="›",
+        spinner="dots2",
+        rule_char="┄",
+        cursor="▍",
+        tempo=0.95,
+    ),
 }
 
 DEFAULT_THEME = "ember"
@@ -178,8 +198,14 @@ def _resolve_theme_name() -> str:
     return DEFAULT_THEME
 
 
-_console = Console()
-_err_console = Console(stderr=True)
+# Honor the NO_COLOR convention (https://no-color.org) plus a scoped
+# SUPERTON_NO_COLOR override. Rich already degrades on non-TTY output;
+# this covers users who want a colorless TTY (screen readers, logs,
+# high-contrast terminal palettes).
+_NO_COLOR = bool(os.environ.get("NO_COLOR") or os.environ.get("SUPERTON_NO_COLOR"))
+
+_console = Console(no_color=_NO_COLOR or None)
+_err_console = Console(stderr=True, no_color=_NO_COLOR or None)
 _current: Theme = THEMES[_resolve_theme_name()]
 
 # Install-flow palette — fire-toned signal vocabulary that stays readable

@@ -12,7 +12,6 @@ import os
 import platform
 import shutil
 import sys
-from pathlib import Path
 from typing import Any
 
 from superton import __version__, ui
@@ -31,11 +30,16 @@ def _mask_token(token: str) -> str:
 
 
 def _detect_install_method() -> str:
-    exe = str(Path(sys.executable).resolve())
-    if "/uv/tools/" in exe or "uv\\tools\\" in exe:
-        return "uv"
-    if "/pipx/" in exe or "pipx\\" in exe:
-        return "pipx"
+    """Mirror cli._detect_install_method: check `sys.prefix` plus the *raw*
+    `sys.executable`. Resolving the executable's symlink walks out of uv's
+    tool venv (bin/python links to the system interpreter) and misreports
+    uv installs as pip."""
+    for raw in (sys.prefix, sys.executable):
+        text = str(raw)
+        if "/uv/tools/" in text or "uv\\tools\\" in text:
+            return "uv"
+        if "/pipx/" in text or "pipx\\" in text:
+            return "pipx"
     return "pip"
 
 
