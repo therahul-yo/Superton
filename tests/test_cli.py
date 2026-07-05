@@ -422,3 +422,119 @@ def test_init_preflight_mentions_semantic_not_ollama_embed(env: Path):
     result = CliRunner().invoke(app, ["init", "--no-model", "-y"])
     assert result.exit_code == 0
     assert "nomic-embed-text" not in result.stdout
+
+
+# --- grouped help, JSON output, export / import-palace -------------------------
+
+
+def test_version_short_flag(env: Path):
+    result = CliRunner().invoke(app, ["-V"])
+    assert result.exit_code == 0
+    assert "superton" in result.stdout.lower()
+
+
+def test_help_shows_grouped_panels(env: Path):
+    result = CliRunner().invoke(app, ["--help"])
+    assert result.exit_code == 0
+    for panel in ("Start here", "Ingest & capture", "Ask & explore", "Palace management"):
+        assert panel in result.stdout
+
+
+def test_stats_json_emits_machine_readable(env: Path):
+    result = CliRunner().invoke(app, ["stats", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "drawers" in payload and "backend" in payload
+
+
+def test_list_json_round_trips_drawer_fields(env: Path):
+    CliRunner().invoke(app, ["note", "json list check"])
+    result = CliRunner().invoke(app, ["list", "--json"])
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert rows and {"id", "text", "source", "wing", "room"} <= set(rows[0])
+
+
+def test_search_json_includes_scores(env: Path):
+    CliRunner().invoke(app, ["note", "token bucket rate limiting"])
+    result = CliRunner().invoke(app, ["search", "token bucket", "--json"])
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert rows and "score" in rows[0] and "text" in rows[0]
+
+
+def test_sources_json(env: Path):
+    CliRunner().invoke(app, ["note", "sources json check"])
+    result = CliRunner().invoke(app, ["sources", "--json"])
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert rows and "source" in rows[0] and "drawers" in rows[0]
+
+
+def test_recent_json(env: Path):
+    CliRunner().invoke(app, ["note", "recent json check"])
+    result = CliRunner().invoke(app, ["recent", "--json"])
+    assert result.exit_code == 0
+    rows = json.loads(result.stdout)
+    assert rows and rows[0]["drawers"] >= 1
+
+
+def test_export_stdout_is_jsonl(env: Path):
+    CliRunner().invoke(app, ["note", "export me"])
+    result = CliRunner().invoke(app, ["export"])
+    assert result.exit_code == 0
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    assert lines
+    row = json.loads(lines[0])
+    assert {"id", "text", "source", "wing", "room", "created_at", "metadata"} <= set(row)
+
+
+def test_export_import_palace_round_trip(env: Path, tmp_path: Path):
+    CliRunner().invoke(app, ["note", "round trip drawer one"])
+    CliRunner().invoke(app, ["note", "round trip drawer two"])
+    out = tmp_path / "backup" / "palace.jsonl"
+    result = CliRunner().invoke(app, ["export", "-o", str(out)])
+    assert result.exit_code == 0
+    assert out.exists()
+
+    # Re-import into the same palace: content-addressed ids dedupe everything.
+    result = CliRunner().invoke(app, ["import-palace", str(out)])
+    assert result.exit_code == 0
+    assert "imported 0 drawers" in result.stdout
+    assert "already present" in result.stdout
+
+
+def test_import_palace_fresh_home_restores_drawers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SUPERTON_MEMORY_BACKEND", "sqlite")
+    home_a = tmp_path / "home-a"
+    home_b = tmp_path / "home-b"
+    backup = tmp_path / "palace.jsonl"
+
+    monkeypatch.setenv("SUPERTON_HOME", str(home_a))
+    CliRunner().invoke(app, ["note", "migrate this drawer"])
+    assert CliRunner().invoke(app, ["export", "-o", str(backup)]).exit_code == 0
+
+    monkeypatch.setenv("SUPERTON_HOME", str(home_b))
+    result = CliRunner().invoke(app, ["import-palace", str(backup)])
+    assert result.exit_code == 0
+    assert "imported 1 drawers" in result.stdout
+
+    listed = CliRunner().invoke(app, ["list", "--json"])
+    rows = json.loads(listed.stdout)
+    assert any("migrate this drawer" in r["text"] for r in rows)
+
+
+def test_import_palace_skips_malformed_lines(env: Path, tmp_path: Path):
+    bad = tmp_path / "bad.jsonl"
+    bad.write_text(
+        '{"text": "good drawer", "source": "backup.md"}\n'
+        "not json at all\n"
+        '{"missing": "text and source"}\n',
+        encoding="utf-8",
+    )
+    result = CliRunner().invoke(app, ["import-palace", str(bad)])
+    assert result.exit_code == 0
+    assert "imported 1 drawers" in result.stdout
+    assert "skipped 2 malformed" in result.stdout

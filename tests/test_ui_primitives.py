@@ -181,3 +181,53 @@ def test_stream_answer_non_tty_has_no_cursor(capsys):
     answer = ui.stream_answer(iter(["hello ", "world"]))
     assert answer == "hello world"
     assert ui.theme().cursor not in capsys.readouterr().out
+
+
+# --- NO_COLOR / SUPERTON_NO_COLOR ----------------------------------------------
+
+
+def test_superton_no_color_strips_ansi(tmp_path):
+    """SUPERTON_NO_COLOR must suppress ANSI even when color is forced on.
+
+    Run in a subprocess because the ui module resolves the flag at import
+    time. FORCE_COLOR makes Rich emit ANSI into the pipe for the control
+    run, proving the assertion is meaningful.
+    """
+    import os
+    import subprocess
+    import sys
+
+    code = "from superton import ui; ui.console().print('[red]colorful[/red]')"
+    base_env = {
+        **os.environ,
+        "SUPERTON_HOME": str(tmp_path),
+        "FORCE_COLOR": "1",
+        "COLUMNS": "80",
+    }
+    base_env.pop("NO_COLOR", None)
+    base_env.pop("SUPERTON_NO_COLOR", None)
+
+    with_color = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=base_env, timeout=60
+    )
+    assert "\x1b[" in with_color.stdout
+
+    no_color = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env={**base_env, "SUPERTON_NO_COLOR": "1"},
+        timeout=60,
+    )
+    assert "colorful" in no_color.stdout
+    assert "\x1b[" not in no_color.stdout
+
+
+def test_aurora_theme_registered():
+    assert "aurora" in ui.THEMES
+    t = ui.THEMES["aurora"]
+    assert t.prompt_glyph and t.label
+    # config.Config.load's inline whitelist must accept every shipped theme.
+    from superton.config import Config  # noqa: F401 — import guards the cycle note
+
+    assert {"ember", "crimson", "void", "ash", "aurora"} == set(ui.THEMES)

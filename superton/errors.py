@@ -72,7 +72,7 @@ def hint_for(exc: BaseException) -> _Hint:
     if isinstance(exc, ConfigError):
         return _Hint(
             summary=str(exc) or "bad configuration",
-            hint="edit [bold]~/.superton/config.toml[/bold] or unset the bad env var",
+            hint="run [bold]superton doctor[/bold] to find config.toml, then fix it or unset the bad env var",
         )
     if isinstance(exc, MemoryError):
         return _Hint(

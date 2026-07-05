@@ -1,13 +1,15 @@
 """SuperTon command-line interface.
 
-Commands:
+Commands (grouped as in `superton --help`):
   superton init                set up palace + check ollama + build Superton
-  superton add <path>          ingest file or directory
+  superton add <path|url>      ingest file, directory, or web page
   superton ask "..."           query Superton with palace context
-  superton list                show recent drawers
-  superton search "..."        semantic search with SQLite fallback
+  superton list                show recent drawers (--json for scripts)
+  superton search "..."        semantic search with SQLite fallback (--json)
   superton forget <id>         remove a drawer
-  superton stats               palace statistics
+  superton stats               palace statistics (--json)
+  superton export              back up every drawer as JSON Lines
+  superton import-palace <f>   restore drawers from an export file
   superton theme [name]        show / switch CLI theme
   superton close               stop SuperTon model runners
   superton import <source>     pull conversations from other AI tools
@@ -36,12 +38,27 @@ from superton.model import Model, ModelError, OllamaError
 
 log = get_logger("cli")
 
+# Help-panel names — every command is grouped so `superton --help` reads
+# as a guided tour instead of an alphabetical dump.
+PANEL_START = "Start here"
+PANEL_INGEST = "Ingest & capture"
+PANEL_EXPLORE = "Ask & explore"
+PANEL_PALACE = "Palace management"
+PANEL_SYSTEM = "Model & system"
+
 app = typer.Typer(
     name="superton",
-    help="A tiny local LLM with infinite memory.",
+    help="A local memory palace: ingest notes, docs, and AI chats — ask with citations.",
     no_args_is_help=False,
     add_completion=False,
     rich_markup_mode="rich",
+    epilog=(
+        "[dim]Examples:[/dim]\n\n"
+        "  superton add ~/notes            [dim]# ingest a folder[/dim]\n\n"
+        '  superton ask "what did I decide about auth?"\n\n'
+        "  superton                        [dim]# interactive shell[/dim]\n\n"
+        "  superton export -o palace.jsonl [dim]# back up every drawer[/dim]"
+    ),
 )
 
 
@@ -344,7 +361,7 @@ def _build_superton(cfg: Config, *, yes: bool) -> bool:
 @app.callback(invoke_without_command=True)
 def _root(
     ctx: typer.Context,
-    version: bool = typer.Option(False, "--version", help="show version"),
+    version: bool = typer.Option(False, "--version", "-V", help="show version"),
 ) -> None:
     if version:
         ui.console().print(f"superton {__version__}")
@@ -354,7 +371,7 @@ def _root(
         raise typer.Exit()
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_START)
 def welcome() -> None:
     """Show the SuperTon welcome tour at any time."""
     cfg = _cfg()
@@ -365,7 +382,7 @@ def welcome() -> None:
     ui.ready_card(cfg, stats)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_START)
 def init(
     skip_model: bool = typer.Option(False, "--no-model", help="skip ollama model build"),
     yes: bool = typer.Option(False, "--yes", "-y", help="accept setup prompts"),
@@ -605,7 +622,7 @@ def _finish_init(cfg: Config, *, offer_demo: bool = False) -> None:
         _offer_demo_seed(cfg, yes=False)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_START)
 def demo() -> None:
     """Seed a tiny local demo palace so new users can ask immediately."""
     cfg = _cfg()
@@ -618,7 +635,7 @@ def demo() -> None:
     ui.hint('try: [bold]superton ask "what is SuperTon?"[/bold]')
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_INGEST)
 def add(
     target: str = typer.Argument(..., help="file, directory, or http(s) URL to ingest"),
     wing: str = typer.Option("default", "--wing", "-w"),
@@ -646,12 +663,19 @@ def add(
         from superton.ingest import chunk_text
 
         drawers = 0
+        deduped = 0
         for chunk in chunk_text(page.markdown):
             mem.add(text=chunk, source=target, wing=wing, room=room)
-            drawers += 1
+            if mem.last_insert_was_new:
+                drawers += 1
+            else:
+                deduped += 1
         mem.close()
         ui.blank()
-        ui.ok(f"ingested {drawers} drawers", f"from {target}")
+        summary = f"from {target}"
+        if deduped:
+            summary += f"  ·  {deduped} deduped"
+        ui.ok(f"ingested {drawers} drawers", summary)
         return
 
     # File/directory branch — existing behavior.
@@ -671,7 +695,7 @@ def add(
     ui.ok(f"ingested {total_drawers} drawers", summary)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_INGEST)
 def note(
     text: str = typer.Argument(..., help="note text to capture"),
     tag: str | None = typer.Option(None, "--tag", "-t", help="optional note tag"),
@@ -689,7 +713,7 @@ def note(
     ui.ok(f"captured note {drawer.id[:8]}", source)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_INGEST)
 def pull(
     url: str = typer.Argument(..., help="base URL of the site to pull"),
     max_pages: int = typer.Option(100, "--max", "-m", help="max pages to pull"),
@@ -752,7 +776,7 @@ def pull(
     ui.ok(summary)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_INGEST)
 def refresh(
     path: Path = typer.Argument(..., exists=True, help="file or directory to replace in memory"),
     wing: str = typer.Option("default", "--wing", "-w"),
@@ -772,7 +796,7 @@ def refresh(
     ui.ok(f"refreshed {files} file(s)")
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_EXPLORE)
 def ask(
     question: str = typer.Argument(..., help="your question"),
     k: int = typer.Option(5, "--top-k", "-k"),
@@ -885,14 +909,33 @@ def ask(
         mem.close()
 
 
-@app.command("list")
+def _drawer_dict(d) -> dict:
+    """JSON-safe dict for one drawer — shared by `list --json` and `export`."""
+    return {
+        "id": d.id,
+        "text": d.text,
+        "source": d.source,
+        "wing": d.wing,
+        "room": d.room,
+        "created_at": d.created_at,
+        "metadata": d.metadata,
+    }
+
+
+@app.command("list", rich_help_panel=PANEL_EXPLORE)
 def list_drawers(
     limit: int = typer.Option(20, "--limit", "-n"),
+    json_output: bool = typer.Option(False, "--json", help="emit drawers as JSON"),
 ) -> None:
     """List recent drawers."""
     mem = Memory(_cfg())
     rows = mem.all(limit=limit)
     mem.close()
+    if json_output:
+        import json
+
+        print(json.dumps([_drawer_dict(d) for d in rows], indent=2))
+        return
     ui.section("drawers", f"last {len(rows)}")
     table = ui.make_table("id", "wing/room", "source", "preview")
     for d in rows:
@@ -906,7 +949,7 @@ def list_drawers(
     ui.print_table(table)
 
 
-def _print_recent_sources(*, days: int, limit: int) -> None:
+def _print_recent_sources(*, days: int, limit: int, json_output: bool = False) -> None:
     """Render the 'recent' table. Shared by `recent` and `today` so the
     Typer command bodies don't call each other (Option defaults are
     OptionInfo sentinels at function-call time, which can confuse direct
@@ -915,6 +958,11 @@ def _print_recent_sources(*, days: int, limit: int) -> None:
     mem = Memory(_cfg())
     rows = mem.recent_sources(since=since, limit=limit)
     mem.close()
+    if json_output:
+        import json
+
+        print(json.dumps(rows, indent=2))
+        return
     ui.section("recent", f"last {days} day(s)")
     table = ui.make_table("drawers", "latest", "source")
     for row in rows:
@@ -925,23 +973,31 @@ def _print_recent_sources(*, days: int, limit: int) -> None:
     ui.print_table(table)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_EXPLORE)
 def recent(
     days: int = typer.Option(7, "--days", "-d", help="look back this many days"),
     limit: int = typer.Option(30, "--limit", "-n"),
+    json_output: bool = typer.Option(False, "--json", help="emit sources as JSON"),
 ) -> None:
     """List sources added recently."""
-    _print_recent_sources(days=days, limit=limit)
+    _print_recent_sources(days=days, limit=limit, json_output=json_output)
 
 
-@app.command()
-def today(limit: int = typer.Option(30, "--limit", "-n")) -> None:
+@app.command(rich_help_panel=PANEL_EXPLORE)
+def today(
+    limit: int = typer.Option(30, "--limit", "-n"),
+    json_output: bool = typer.Option(False, "--json", help="emit sources as JSON"),
+) -> None:
     """List sources added in the last 24 hours."""
-    _print_recent_sources(days=1, limit=limit)
+    _print_recent_sources(days=1, limit=limit, json_output=json_output)
 
 
-@app.command()
-def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
+@app.command(rich_help_panel=PANEL_EXPLORE)
+def search(
+    query: str,
+    limit: int = typer.Option(10, "--limit", "-n"),
+    json_output: bool = typer.Option(False, "--json", help="emit hits as JSON"),
+) -> None:
     """Semantic search across drawers with SQLite fallback."""
     mem = Memory(_cfg())
     with ui.spinner(
@@ -949,6 +1005,14 @@ def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
         phases=["Embedding query", "Scanning drawers", "Re-ranking hits"],
     ):
         hits = mem.search(query, limit=limit)
+    if json_output:
+        import json
+
+        mem.close()
+        print(json.dumps(
+            [{"score": h.score, **_drawer_dict(h.drawer)} for h in hits], indent=2
+        ))
+        return
     if not hits:
         ui.shimmer(f"  scanning palace for {query!r}…")
         ui.warn("no drawers matched")
@@ -962,7 +1026,7 @@ def search(query: str, limit: int = typer.Option(10, "--limit", "-n")) -> None:
     mem.close()
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_PALACE)
 def forget(drawer_id: str) -> None:
     """Remove a drawer by ID."""
     mem = Memory(_cfg())
@@ -979,7 +1043,7 @@ def forget(drawer_id: str) -> None:
         ui.warn(f"no drawer matched {drawer_id}")
 
 
-@app.command("forget-source")
+@app.command("forget-source", rich_help_panel=PANEL_PALACE)
 def forget_source(source: str) -> None:
     """Remove every drawer from a source path or filename."""
     mem = Memory(_cfg())
@@ -991,15 +1055,21 @@ def forget_source(source: str) -> None:
         ui.warn(f"no source matched {source}")
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_EXPLORE)
 def sources(
     limit: int = typer.Option(30, "--limit", "-n"),
     health: bool = typer.Option(False, "--health", help="show source refresh/index health"),
+    json_output: bool = typer.Option(False, "--json", help="emit sources as JSON"),
 ) -> None:
     """List indexed source files."""
     mem = Memory(_cfg())
     rows = mem.source_health(limit=limit) if health else mem.sources(limit=limit)
     mem.close()
+    if json_output:
+        import json
+
+        print(json.dumps(rows, indent=2))
+        return
     ui.section("sources", f"{len(rows)} indexed")
     if health:
         table = ui.make_table("drawers", "indexed", "pending", "path", "source")
@@ -1018,7 +1088,7 @@ def sources(
     ui.print_table(table)
 
 
-@app.command("model")
+@app.command("model", rich_help_panel=PANEL_SYSTEM)
 def model_info() -> None:
     """Show the Superton model configuration."""
     cfg = _cfg()
@@ -1030,7 +1100,7 @@ def model_info() -> None:
     ])
 
 
-@app.command("theme")
+@app.command("theme", rich_help_panel=PANEL_SYSTEM)
 def theme_cmd(
     name: str | None = typer.Argument(None, help=f"one of: {', '.join(ui.THEMES)}"),
 ) -> None:
@@ -1071,12 +1141,19 @@ def theme_cmd(
     ui.ok(f"theme → {name}", ui.theme().label)
 
 
-@app.command()
-def stats() -> None:
+@app.command(rich_help_panel=PANEL_PALACE)
+def stats(
+    json_output: bool = typer.Option(False, "--json", help="emit machine-readable stats"),
+) -> None:
     """Palace statistics."""
     mem = Memory(_cfg())
     s = mem.stats()
     mem.close()
+    if json_output:
+        import json
+
+        print(json.dumps(s, indent=2, sort_keys=True))
+        return
     ui.section("palace")
     ui.kv([
         ("drawers", str(s["drawers"])),
@@ -1089,7 +1166,7 @@ def stats() -> None:
         ui.warn("semantic fallback active", str(s["semantic_error"]))
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_SYSTEM)
 def doctor(
     json_output: bool = typer.Option(False, "--json", help="emit machine-readable diagnostics"),
 ) -> None:
@@ -1099,7 +1176,7 @@ def doctor(
     render_doctor_report(_cfg(), json_output=json_output)
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_PALACE)
 def reindex() -> None:
     """Rebuild semantic index from the SQLite drawer store."""
     mem = Memory(_cfg())
@@ -1116,7 +1193,89 @@ def reindex() -> None:
     ui.ok(f"reindexed {total} drawers")
 
 
-@app.command("close")
+@app.command(rich_help_panel=PANEL_PALACE)
+def export(
+    out: Path | None = typer.Option(
+        None, "--out", "-o", help="write to this file (default: stdout)"
+    ),
+    limit: int = typer.Option(0, "--limit", "-n", help="max drawers to export (0 = all)"),
+) -> None:
+    """Export every drawer as JSON Lines — for backup, sync, or migration.
+
+    Each line is one self-contained JSON object (id, text, source, wing,
+    room, created_at, metadata). Round-trips through
+    `superton import-palace <file>` on any machine; drawer ids are
+    content-addressed so re-importing is idempotent.
+    """
+    import json
+
+    mem = Memory(_cfg())
+    drawers = mem.all(limit=limit if limit > 0 else 10_000_000)
+    mem.close()
+    lines = (json.dumps(_drawer_dict(d), ensure_ascii=False) for d in drawers)
+    if out is None:
+        for line in lines:
+            print(line)
+        return
+    path = out.expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for line in lines:
+            fh.write(line + "\n")
+    ui.ok(f"exported {len(drawers)} drawers", str(path))
+
+
+@app.command("import-palace", rich_help_panel=PANEL_PALACE)
+def import_palace(
+    file: Path = typer.Argument(..., exists=True, help="JSONL file from `superton export`"),
+) -> None:
+    """Import drawers from a `superton export` JSON Lines file.
+
+    Content-addressed ids make this idempotent: drawers that already
+    exist are counted as deduped, not duplicated.
+    """
+    import json
+
+    mem = Memory(_cfg())
+    added = 0
+    deduped = 0
+    skipped = 0
+    with (
+        ui.progress("importing palace") as advance,
+        file.expanduser().open("r", encoding="utf-8") as fh,
+    ):
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                text = row["text"]
+                source = row["source"]
+            except (json.JSONDecodeError, TypeError, KeyError):
+                skipped += 1
+                log.warning("import-palace: skipping malformed line %d", lineno)
+                continue
+            mem.add(
+                text=text,
+                source=source,
+                wing=row.get("wing") or "default",
+                room=row.get("room") or "default",
+                metadata=row.get("metadata") or {},
+            )
+            if mem.last_insert_was_new:
+                added += 1
+            else:
+                deduped += 1
+            advance(description=f"importing palace  [dim]{added} drawers[/]")
+    mem.close()
+    detail = f"{deduped} already present" if deduped else None
+    ui.ok(f"imported {added} drawers", detail)
+    if skipped:
+        ui.warn(f"skipped {skipped} malformed line(s)", "see SUPERTON_LOG=warn for line numbers")
+
+
+@app.command("close", rich_help_panel=PANEL_SYSTEM)
 def close_models(
     all_models: bool = typer.Option(
         False,
@@ -1262,7 +1421,7 @@ def _uninstall_model_names(cfg: Config, *, models: bool, all_models: bool) -> li
     return list(dict.fromkeys(names))
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_SYSTEM)
 def uninstall(
     yes: bool = typer.Option(False, "--yes", "-y", help="confirm removal prompts"),
     data: bool = typer.Option(True, "--data/--keep-data", help="remove the local palace and config"),
@@ -1425,7 +1584,7 @@ def uninstall(
 
 
 import_app = typer.Typer(help="Import conversations from other AI tools.")
-app.add_typer(import_app, name="import")
+app.add_typer(import_app, name="import", rich_help_panel=PANEL_INGEST)
 
 
 _REPLACE_HELP = (
@@ -1509,7 +1668,7 @@ def import_amp(
     ui.ok(f"imported {drawers} drawers", f"from {files} Amp files")
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_SYSTEM)
 def tune() -> None:
     """Open the Modelfile in $EDITOR and rebuild Superton."""
     cfg = _cfg()
@@ -1530,7 +1689,7 @@ def tune() -> None:
 # --- MemPalace power-user commands --------------------------------------------
 
 mcp_app = typer.Typer(help="Expose the palace over MCP for Claude / Cursor / Gemini.")
-app.add_typer(mcp_app, name="mcp")
+app.add_typer(mcp_app, name="mcp", rich_help_panel=PANEL_SYSTEM)
 
 
 @mcp_app.command("serve")
@@ -1580,7 +1739,7 @@ def mcp_serve(
         _sys.argv = argv_backup
 
 
-@app.command()
+@app.command(rich_help_panel=PANEL_PALACE)
 def dedup(
     threshold: float = typer.Option(
         0.92, "--threshold", "-t", help="similarity threshold (0-1, higher = stricter)"

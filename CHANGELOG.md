@@ -43,6 +43,52 @@ changes — they are called out in the **Breaking** section.
 
 ## [Unreleased]
 
+### Added
+
+- **`superton export` / `superton import-palace`.** Back up every drawer
+  as JSON Lines (`superton export -o palace.jsonl`, or stream to stdout)
+  and restore it on any machine. Drawer ids are content-addressed, so
+  re-importing is idempotent — duplicates are counted, not re-inserted.
+- **`--json` output mode** for `list`, `search`, `sources`, `stats`,
+  `recent`, and `today` — pipe palace data straight into `jq` or scripts
+  (the roadmap's Phase-3 "JSON output mode", landed early).
+- **`aurora` theme** — teal on black, northern-lights palette. The fifth
+  hand-tuned theme, with its own `❖` prompt glyph, spinner, and rule
+  character.
+- **Grouped `superton --help`.** Commands are now organized into "Start
+  here", "Ingest & capture", "Ask & explore", "Palace management", and
+  "Model & system" panels, with an examples footer. Also: `-V` as a
+  short version flag.
+- **Shell: typo guard with "did you mean".** Mistyped slash commands
+  (`/serach`, `/them`) no longer fall through to the model as chat —
+  the shell suggests the closest command instead. Bare commands that
+  need an argument (`/add`) now print their usage line.
+- **Shell: `/list`, `/recent`, `/note <text>`, and `/why`.** Recent
+  drawers, recently added sources, and quick note capture without
+  leaving the REPL; `/why` toggles a retrieval trace under every answer.
+- **Shell: grouped `/help` cheatsheet** — a themed, four-group command
+  map replacing the old one-line dump — and **tab path completion** for
+  `/add` and `/refresh` arguments.
+- **`NO_COLOR` / `SUPERTON_NO_COLOR`.** Honors the no-color.org
+  convention plus a scoped override for colorless-but-interactive
+  terminals.
+
+### Fixed
+
+- `superton doctor` misreported uv installs as `pip`: it resolved the
+  interpreter symlink out of uv's tool venv before matching the path —
+  the same bug `superton uninstall` fixed earlier. Doctor now checks
+  `sys.prefix` and the raw executable path.
+- `superton add <url>` counted re-ingested (deduped) chunks as newly
+  ingested drawers; it now reports `N drawers · M deduped` like file
+  ingestion does.
+- The `ConfigError` recovery hint pointed at `~/.superton/config.toml`,
+  which was never the config location; it now points at
+  `superton doctor`, which prints the real path.
+- Removed shadowing duplicate `ANSWER_CONTEXT_DRAWERS` /
+  `ANSWER_DRAWER_CHARS` constants in `superton/shell.py` — the canonical
+  values live in `superton.chat`.
+
 ### Removed (BREAKING)
 
 - **Textual TUI.** `superton tui`, the `[tui]` optional extra, the

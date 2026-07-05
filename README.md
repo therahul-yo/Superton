@@ -112,7 +112,7 @@ The interesting choices, with the tradeoffs called out:
   generating a plausible-but-wrong answer from the model's parametric
   memory. The user gets a "did you mean…" with the closest source files
   instead.
-- **Themes as a UX commitment, not a skin.** Four hand-tuned palettes
+- **Themes as a UX commitment, not a skin.** Five hand-tuned palettes
   share an icon and styling vocabulary (✓ ! ✗ ℹ → ›). Paths, drawer ids,
   commands, and keyboard hints route through `ui.style_*` helpers so
   switching themes looks intentional, not skinned.
@@ -220,6 +220,9 @@ superton welcome                 # anytime tour of what's installed
 # power tools
 superton mcp serve               # expose the palace to Claude / Cursor / Gemini
 superton dedup --dry-run         # find near-duplicate drawers
+superton export -o palace.jsonl  # back up every drawer (JSON Lines)
+superton import-palace palace.jsonl   # restore on any machine
+superton search "throttling" --json | jq .   # script-friendly output
 superton close                   # stop local model runners
 
 # or launch the interactive shell — type /stop to unload Superton, /quit to stop + exit
@@ -249,7 +252,11 @@ sources
 
 Inside the shell, `/clear` resets the conversation, `/theme <name>` swaps the
 palette, and `/model` shows Superton's model configuration with a brief
-confirmation flash.
+confirmation flash. `/list` and `/recent` show what's in the palace, `/note
+<text>` captures a quick thought, and `/why` toggles a retrieval trace under
+every answer. Tab-completion covers slash commands, theme names, and file
+paths after `/add` / `/refresh` — and a mistyped command gets a
+"did you mean /search?" nudge instead of being sent to the model.
 
 ## Web Puller
 
@@ -283,17 +290,19 @@ Features:
 | `superton welcome` | Show the header + palace intro + next-steps card any time |
 | `superton add <path>` | Ingest a file or directory |
 | `superton ask "..."` | Query Superton with palace context (streaming + citations) |
-| `superton list` | Show recent drawers |
+| `superton list` | Show recent drawers (`--json` for scripts) |
 | `superton search "..."` | Hybrid search via MemPalace with SQLite fallback |
 | `superton forget <id>` | Remove a drawer |
 | `superton forget-source <path-or-name>` | Remove all drawers from one source |
 | `superton refresh <path>` | Reingest a source and remove stale chunks |
 | `superton sources` | List indexed source files |
-| `superton stats` | Palace statistics |
+| `superton stats` | Palace statistics (`--json` for scripts) |
 | `superton doctor` | Check local runtime, memory, theme, and model setup |
 | `superton reindex` | Rebuild semantic index from stored drawers |
 | `superton model` | Show the Superton model configuration |
-| `superton theme [ember\|crimson\|void\|ash]` | Show or switch the CLI theme |
+| `superton theme [ember\|crimson\|void\|ash\|aurora]` | Show or switch the CLI theme |
+| `superton export [-o file]` | Back up every drawer as JSON Lines |
+| `superton import-palace <file>` | Restore drawers from a `superton export` file |
 | `superton dedup [--dry-run \| --apply]` | Find near-duplicate drawers (via MemPalace dedup) |
 | `superton mcp serve` | Run the MemPalace MCP server against the SuperTon palace |
 | `superton close` | Stop running SuperTon model runners |
@@ -352,7 +361,7 @@ base models.
 
 ## Themes
 
-SuperTon ships with four hand-tuned CLI themes:
+SuperTon ships with five hand-tuned CLI themes:
 
 | Theme | Vibe |
 |---|---|
@@ -360,9 +369,10 @@ SuperTon ships with four hand-tuned CLI themes:
 | `crimson` | blood red on black · dark and sharp |
 | `void` | dark violet · deep-space palette |
 | `ash` | white on black · stark monochrome |
+| `aurora` | teal on black · northern lights |
 
 Each theme carries its own design language, not just colors: a unique
-prompt glyph (`◉ ✦ ◈ ›`), spinner style, and rule character — `ember`
+prompt glyph (`◉ ✦ ◈ › ❖`), spinner style, and rule character — `ember`
 draws solid gradient rules, `crimson` dotted, `void` dashed. Section
 headers sweep muted → primary as they appear, install stages tick in
 with a 3-frame pulse, and the stage tracker shows `●●○○○` progress dots.
@@ -445,7 +455,7 @@ four characters so the report is shareable.
 | variable | purpose | default |
 |---|---|---|
 | `SUPERTON_HOME` | override palace location | platform-specific |
-| `SUPERTON_THEME` | `ember \| crimson \| void \| ash` | `ember` |
+| `SUPERTON_THEME` | `ember \| crimson \| void \| ash \| aurora` | `ember` |
 | `SUPERTON_MODEL_BACKEND` | `auto \| ollama \| huggingface` | `auto` |
 | `SUPERTON_MEMORY_BACKEND` | `hybrid \| semantic \| mempalace \| sqlite` | `hybrid` |
 | `SUPERTON_BASE_MODEL` | override the Ollama base tag | `openbmb/minicpm5` |
@@ -453,6 +463,7 @@ four characters so the report is shareable.
 | `OLLAMA_HOST` | Ollama daemon URL | `http://127.0.0.1:11434` |
 | `HF_TOKEN` | enables Hugging Face fallback | — |
 | `SUPERTON_LOG` | `debug \| info \| warn \| error \| off` | `warn` |
+| `NO_COLOR` / `SUPERTON_NO_COLOR` | disable ANSI color entirely | — |
 | `SUPERTON_LOG_JSON` | one JSON record per line on stderr | off |
 | `SUPERTON_LOG_FILE` | tee structured logs to a file | — |
 
@@ -482,11 +493,11 @@ superton doctor
 - **Phase 1.5** — production hardening: structured logging, typed errors
   with recovery hints, mypy-strict core, 231-test suite, Linux+macOS CI,
   UI polish pass (verb-cycling spinners, cards, pills, diff refresh) ✅
-- **Phase 2** *(current)* — `timeline` / `entities` via MemPalace knowledge
-  graph, batched ingest via `mempalace.miner`, OCR fallback for image PDFs,
-  file watcher, `export` / `import-palace` / `sync`
-- **Phase 3** — Gemini importer, browser extension, JSON output mode,
-  packaging polish
+- **Phase 2** *(current)* — `export` / `import-palace` ✅, JSON output
+  mode ✅, `timeline` / `entities` via MemPalace knowledge graph, batched
+  ingest via `mempalace.miner`, OCR fallback for image PDFs, file watcher,
+  `sync`
+- **Phase 3** — Gemini importer, browser extension, packaging polish
 - **Phase 4** — `evolve` (LoRA fine-tune from your drawers), web UI
 
 ## License
