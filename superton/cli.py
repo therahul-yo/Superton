@@ -1026,6 +1026,103 @@ def search(
     mem.close()
 
 
+@app.command("open", rich_help_panel=PANEL_EXPLORE)
+def open_drawer(
+    drawer_id: str = typer.Argument(..., help="drawer id (or the short prefix from a citation)"),
+    edit: bool = typer.Option(False, "--edit", "-e", help="open the source file in $EDITOR"),
+) -> None:
+    """Jump from a citation to the full drawer and its source.
+
+    Accepts the 8-char ids shown in citation footers. With --edit the
+    source file opens in $EDITOR (file-backed sources only).
+    """
+    mem = Memory(_cfg())
+    matches = mem.find_by_prefix(drawer_id)
+    mem.close()
+    if not matches:
+        ui.warn(f"no drawer matched {drawer_id}")
+        ui.hint("find ids with [bold]superton list[/bold] or in any citation footer")
+        raise typer.Exit(1)
+    if len(matches) > 1:
+        ui.warn(f"{len(matches)} drawers match {drawer_id} — be more specific")
+        for d in matches:
+            ui.console().print(f"  {ui.style_id(d.id)}  {ui.style_path(Path(d.source).name)}")
+        raise typer.Exit(1)
+
+    d = matches[0]
+    t = ui.theme()
+    created = time.strftime("%Y-%m-%d %H:%M", time.localtime(d.created_at))
+    age_days = max(0, int((time.time() - d.created_at) // 86400))
+    body = Text()
+    body.append(d.id, style=t.secondary)
+    body.append(f"  {d.wing}/{d.room}", style=t.muted)
+    body.append(f"  ·  {created} ({age_days}d ago)", style=t.muted)
+    body.append("\n")
+    body.append(d.source, style=t.muted)
+    body.append("\n\n")
+    body.append(d.text)
+    ui.panel(body, title="drawer", anchor=True)
+
+    source_path = Path(d.source).expanduser()
+    if not edit:
+        if source_path.exists():
+            ui.hint(f"open the source with [bold]superton open {d.id[:8]} --edit[/bold]")
+        return
+    if not source_path.exists():
+        ui.warn("source is not a file on disk", d.source)
+        ui.hint("notes, imports, and web pulls are virtual sources — the drawer above is the content")
+        return
+    editor = os.environ.get("EDITOR", "nano")
+    subprocess.run([editor, str(source_path)], check=False)
+
+
+@app.command(rich_help_panel=PANEL_EXPLORE)
+def recall(
+    limit: int = typer.Option(3, "--limit", "-n", help="how many drawers to resurface"),
+    min_age_days: int = typer.Option(
+        0, "--older-than", help="only resurface drawers at least this many days old"
+    ),
+) -> None:
+    """Resurface random drawers from the palace — memory you forgot you had.
+
+    With --older-than N the sample skips anything fresher than N days,
+    biasing recall toward the almost-forgotten.
+    """
+    mem = Memory(_cfg())
+    older_than = time.time() - min_age_days * 86400 if min_age_days > 0 else None
+    drawers = mem.random_drawers(limit=max(limit, 1), older_than=older_than)
+    mem.close()
+    ui.section("recall", "a walk through the palace")
+    if not drawers:
+        ui.blank()
+        if min_age_days > 0:
+            ui.hint(f"nothing older than {min_age_days} day(s) yet — lower --older-than")
+        else:
+            ui.hint("the palace is empty — ingest something first")
+        return
+
+    from rich.console import Group
+
+    t = ui.theme()
+    cards = []
+    now = time.time()
+    for d in drawers:
+        age_days = max(0, int((now - d.created_at) // 86400))
+        when = "today" if age_days == 0 else (
+            "yesterday" if age_days == 1 else f"{age_days} days ago"
+        )
+        header = Text()
+        header.append(f"{t.bullet} ", style=t.primary)
+        header.append(when, style=f"bold {t.primary}")
+        header.append(f"  {Path(d.source).name}", style=t.muted)
+        header.append(f"  {d.id[:8]}", style=t.secondary)
+        preview = " ".join(d.text.split())[:300]
+        cards.append(Group(header, Text(f"  {preview}", style=t.neutral), Text("")))
+    ui.blank()
+    ui.reveal_cards(cards)
+    ui.hint("read one in full: [bold]superton open <id>[/bold]")
+
+
 @app.command(rich_help_panel=PANEL_PALACE)
 def forget(drawer_id: str) -> None:
     """Remove a drawer by ID."""

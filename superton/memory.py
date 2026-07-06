@@ -433,6 +433,32 @@ class Memory:
         r = self._db.execute("SELECT * FROM drawers WHERE id = ?", (drawer_id,)).fetchone()
         return self._row_to_drawer(r) if r else None
 
+    def find_by_prefix(self, prefix: str, *, limit: int = 5) -> list[Drawer]:
+        """Drawers whose id starts with `prefix` — resolves the short ids
+        shown in citations. Empty prefix matches nothing on purpose."""
+        needle = prefix.strip().lower()
+        if not needle:
+            return []
+        rows = self._db.execute(
+            "SELECT * FROM drawers WHERE id LIKE ? ORDER BY created_at DESC LIMIT ?",
+            (needle + "%", limit),
+        ).fetchall()
+        return [self._row_to_drawer(r) for r in rows]
+
+    def random_drawers(self, *, limit: int = 3, older_than: float | None = None) -> list[Drawer]:
+        """Random sample for `superton recall` — optionally only drawers
+        created before `older_than` so recall favors the almost-forgotten."""
+        if older_than is not None:
+            rows = self._db.execute(
+                "SELECT * FROM drawers WHERE created_at <= ? ORDER BY RANDOM() LIMIT ?",
+                (older_than, limit),
+            ).fetchall()
+        else:
+            rows = self._db.execute(
+                "SELECT * FROM drawers ORDER BY RANDOM() LIMIT ?", (limit,)
+            ).fetchall()
+        return [self._row_to_drawer(r) for r in rows]
+
     def sources(self, *, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.execute(
             """
