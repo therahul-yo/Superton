@@ -633,6 +633,36 @@ class Memory:
         ).fetchall()
         return [self._row_to_drawer(r) for r in rows]
 
+    def activity(self, *, since: float, limit: int = 500) -> list[dict[str, Any]]:
+        """Per-day, per-source drawer counts since `since`, newest day first.
+
+        Rows: {day: 'YYYY-MM-DD' (localtime), source, drawers, latest}.
+        Backs `superton timeline`.
+        """
+        rows = self._db.execute(
+            """
+            SELECT date(created_at, 'unixepoch', 'localtime') AS day,
+                   source,
+                   COUNT(*) AS drawers,
+                   MAX(created_at) AS latest
+            FROM drawers
+            WHERE created_at >= ?
+            GROUP BY day, source
+            ORDER BY day DESC, latest DESC
+            LIMIT ?
+            """,
+            (since, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def drawers_since(self, *, since: float, limit: int = 200) -> list[Drawer]:
+        """Every drawer created since `since`, newest first. Backs `digest`."""
+        rows = self._db.execute(
+            "SELECT * FROM drawers WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
+            (since, limit),
+        ).fetchall()
+        return [self._row_to_drawer(r) for r in rows]
+
     def recent_sources(self, *, since: float, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.execute(
             """

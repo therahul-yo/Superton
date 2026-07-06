@@ -45,6 +45,12 @@ changes — they are called out in the **Breaking** section.
 
 ### Added
 
+- **`superton timeline` and `superton digest`** (REVAMP_PLAN Phase 2).
+  `timeline` shows a day-by-day view of what entered the palace
+  (`--json` for scripts). `digest` generates a cited brief — *Worked
+  on / Decided / Open threads* — from the window's drawers, spreading
+  context across sources so one bulk import can't monopolize it, and
+  falling back to a plain activity table when no model backend is up.
 - **`superton open` and `superton recall`** (REVAMP_PLAN Phase 3 core).
   `open <id>` resolves the short ids shown in citation footers to the
   full drawer (source, wing/room, age, complete text) and `--edit`
