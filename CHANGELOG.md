@@ -45,6 +45,13 @@ changes — they are called out in the **Breaking** section.
 
 ### Added
 
+- **`superton open` and `superton recall`** (REVAMP_PLAN Phase 3 core).
+  `open <id>` resolves the short ids shown in citation footers to the
+  full drawer (source, wing/room, age, complete text) and `--edit`
+  jumps into the source file in `$EDITOR` — citations become
+  actionable. `recall [--older-than N]` resurfaces random drawers with
+  age labels, biasing toward the almost-forgotten.
+
 - **`superton export` / `superton import-palace`.** Back up every drawer
   as JSON Lines (`superton export -o palace.jsonl`, or stream to stdout)
   and restore it on any machine. Drawer ids are content-addressed, so

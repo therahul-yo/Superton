@@ -292,6 +292,8 @@ Features:
 | `superton ask "..."` | Query Superton with palace context (streaming + citations) |
 | `superton list` | Show recent drawers (`--json` for scripts) |
 | `superton search "..."` | Hybrid search via MemPalace with SQLite fallback |
+| `superton open <id>` | Show the full drawer behind a citation (`--edit` opens the source) |
+| `superton recall [--older-than N]` | Resurface random drawers — memory you forgot you had |
 | `superton forget <id>` | Remove a drawer |
 | `superton forget-source <path-or-name>` | Remove all drawers from one source |
 | `superton refresh <path>` | Reingest a source and remove stale chunks |
