@@ -984,6 +984,166 @@ def recent(
 
 
 @app.command(rich_help_panel=PANEL_EXPLORE)
+def timeline(
+    days: int = typer.Option(7, "--days", "-d", help="look back this many days"),
+    json_output: bool = typer.Option(False, "--json", help="emit activity as JSON"),
+) -> None:
+    """Chronological view of what entered the palace, day by day."""
+    since = time.time() - max(days, 1) * 86400
+    mem = Memory(_cfg())
+    rows = mem.activity(since=since)
+    mem.close()
+    if json_output:
+        import json
+
+        print(json.dumps(rows, indent=2))
+        return
+    ui.section("timeline", f"last {days} day(s)")
+    if not rows:
+        ui.blank()
+        ui.hint("nothing ingested in this window — try [bold]superton add <path>[/bold]")
+        return
+
+    from datetime import date, datetime, timedelta
+
+    today_str = date.today().isoformat()
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    t = ui.theme()
+    current_day: str | None = None
+    total = 0
+    for row in rows:
+        day = str(row["day"])
+        if day != current_day:
+            current_day = day
+            try:
+                weekday = datetime.strptime(day, "%Y-%m-%d").strftime("%A")
+            except ValueError:
+                weekday = ""
+            label = "today" if day == today_str else (
+                "yesterday" if day == yesterday_str else weekday.lower()
+            )
+            ui.blank()
+            ui.console().print(
+                f"[bold {t.primary}]{day}[/]  [{t.muted}]{label}[/]"
+            )
+        drawers = int(row["drawers"])
+        total += drawers
+        stamp = time.strftime("%H:%M", time.localtime(float(row["latest"])))
+        name = Path(str(row["source"])).name
+        ui.console().print(
+            f"  [{t.muted}]{stamp}[/]  "
+            f"[{t.secondary}]{drawers:>4}[/] [{t.muted}]drawer(s)[/]  {name}"
+        )
+    ui.blank()
+    ui.hint(f"{total} drawer(s) across {days} day(s) · dig in with [bold]superton search[/bold]")
+
+
+DIGEST_SYSTEM_PROMPT = (
+    "You are Superton, writing a personal work digest from excerpts of the "
+    "user's own recent files and AI conversations. Structure the digest as "
+    "three short sections titled exactly: Worked on, Decided, Open threads. "
+    "Use terse bullet points; quote concrete names, numbers, and facts from "
+    "the excerpts; cite excerpt ids inline like [abcd1234]. If a section has "
+    "nothing, write '- nothing captured'. Never invent items that are not in "
+    "the excerpts. Keep the whole digest under 18 lines."
+)
+
+# Bounds for digest context assembly: enough breadth to be representative,
+# small enough to fit the 1B model's attention comfortably.
+DIGEST_MAX_DRAWERS = 24
+DIGEST_DRAWER_CHARS = 500
+
+
+@app.command(rich_help_panel=PANEL_EXPLORE)
+def digest(
+    days: int = typer.Option(7, "--days", "-d", help="digest this many days back"),
+) -> None:
+    """Generate a brief of what you worked on, decided, and left open.
+
+    Grounded in the drawers ingested during the window; falls back to a
+    plain source summary when no model backend is available.
+    """
+    since = time.time() - max(days, 1) * 86400
+    cfg = _cfg()
+    mem = Memory(cfg)
+    drawers = mem.drawers_since(since=since, limit=DIGEST_MAX_DRAWERS * 4)
+    if not drawers:
+        mem.close()
+        ui.section("digest", f"last {days} day(s)")
+        ui.blank()
+        ui.hint("nothing ingested in this window — feed the palace first")
+        raise typer.Exit(0)
+
+    # Spread the context across sources instead of letting one bulk import
+    # monopolize it: round-robin drawers per source until the cap.
+    from superton.memory import Drawer
+
+    by_source: dict[str, list[Drawer]] = {}
+    for d in drawers:
+        by_source.setdefault(d.source, []).append(d)
+    picked: list[Drawer] = []
+    while len(picked) < DIGEST_MAX_DRAWERS and any(by_source.values()):
+        for source in list(by_source):
+            queue = by_source[source]
+            if queue:
+                picked.append(queue.pop(0))
+                if len(picked) >= DIGEST_MAX_DRAWERS:
+                    break
+            else:
+                del by_source[source]
+
+    context = "\n\n---\n\n".join(
+        f"[drawer:{d.id[:8]} · {Path(d.source).name}]\n{d.text[:DIGEST_DRAWER_CHARS]}"
+        for d in picked
+    )
+    prompt = (
+        f"EXCERPTS FROM THE LAST {days} DAY(S):\n\n{context}\n\n"
+        "Write the digest now."
+    )
+
+    ui.section("digest", f"last {days} day(s) · {len(picked)} drawers")
+
+    model = Model(cfg)
+    if model.backend() is None:
+        model.start_ollama(timeout=5.0)
+    if model.backend() is None:
+        # No model — still useful: show where the activity happened.
+        model.close()
+        sources = mem.recent_sources(since=since, limit=15)
+        mem.close()
+        ui.blank()
+        ui.warn("model backend offline — showing activity summary instead")
+        table = ui.make_table("drawers", "latest", "source")
+        for row in sources:
+            latest = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(row["latest"])))
+            table.add_row(str(row["drawers"]), latest, row["source"])
+        ui.print_table(table)
+        ui.hint("run [bold]superton init[/bold] to build the model for generated digests")
+        return
+
+    from superton.memory import SearchHit
+
+    try:
+        ui.stream_answer(model.generate(prompt, system=DIGEST_SYSTEM_PROMPT))
+        seen_sources: set[str] = set()
+        cite_hits = []
+        for d in picked:
+            if d.source not in seen_sources:
+                seen_sources.add(d.source)
+                cite_hits.append(SearchHit(drawer=d, score=1.0))
+            if len(cite_hits) >= 3:
+                break
+        ui.citations(cite_hits)
+        ui.blank()
+    except (OllamaError, ModelError) as e:
+        log.error("digest generation failed: %s", e)
+        errors.render(e)
+    finally:
+        model.close()
+        mem.close()
+
+
+@app.command(rich_help_panel=PANEL_EXPLORE)
 def today(
     limit: int = typer.Option(30, "--limit", "-n"),
     json_output: bool = typer.Option(False, "--json", help="emit sources as JSON"),

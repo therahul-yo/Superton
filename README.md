@@ -207,6 +207,8 @@ superton ask "open issues in the auth refactor" --why
 # explore
 superton list
 superton search "how did we handle request throttling?"
+superton timeline                # what entered the palace, day by day
+superton digest                  # generated brief: worked on / decided / open
 superton sources
 superton stats
 superton doctor
@@ -291,6 +293,8 @@ Features:
 | `superton add <path>` | Ingest a file or directory |
 | `superton ask "..."` | Query Superton with palace context (streaming + citations) |
 | `superton list` | Show recent drawers (`--json` for scripts) |
+| `superton timeline [--days N]` | Day-by-day view of what entered the palace |
+| `superton digest [--days N]` | Generated brief: worked on · decided · open threads |
 | `superton search "..."` | Hybrid search via MemPalace with SQLite fallback |
 | `superton open <id>` | Show the full drawer behind a citation (`--edit` opens the source) |
 | `superton recall [--older-than N]` | Resurface random drawers — memory you forgot you had |
