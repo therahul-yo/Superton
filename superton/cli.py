@@ -796,6 +796,137 @@ def refresh(
     ui.ok(f"refreshed {files} file(s)")
 
 
+watch_app = typer.Typer(
+    help="Keep the palace current automatically — watch folders and AI transcripts.",
+    invoke_without_command=True,
+)
+app.add_typer(watch_app, name="watch", rich_help_panel=PANEL_INGEST)
+
+
+@watch_app.callback(invoke_without_command=True)
+def watch_run(
+    ctx: typer.Context,
+    interval: float = typer.Option(30.0, "--interval", "-i", help="seconds between scan passes"),
+    once: bool = typer.Option(False, "--once", help="run a single scan pass and exit"),
+    transcripts: bool = typer.Option(
+        True,
+        "--transcripts/--no-transcripts",
+        help="also watch AI-tool transcript dirs (Claude Code, Cursor, Amp)",
+    ),
+) -> None:
+    """Watch the watchlist + AI transcript dirs and auto-ingest changes.
+
+    New files are ingested, changed files are refreshed (stale chunks
+    dropped first), and deleted files keep their drawers — the palace is
+    memory, not a mirror. Manage the watchlist with
+    `superton watch add|remove|list`.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    from superton.watcher import ScanReport, Watcher, default_transcript_roots, load_watchlist
+
+    cfg = _cfg()
+    roots = load_watchlist(cfg)
+    tx_roots = default_transcript_roots() if transcripts else []
+    if not roots and not tx_roots:
+        ui.warn("nothing to watch")
+        ui.hint("add a folder first: [bold]superton watch add ~/notes[/bold]")
+        raise typer.Exit(1)
+
+    ui.section("watch", f"every {interval:.0f}s" if not once else "single pass")
+    for root in roots:
+        ui.step(f"watching {root}")
+    for name, root in tx_roots:
+        ui.step(f"watching {name} transcripts at {root}")
+    ui.blank()
+
+    mem = Memory(cfg)
+    watcher = Watcher(cfg, mem, roots=roots, transcript_roots=tx_roots)
+
+    def _render(report: ScanReport) -> None:
+        if not report.activity:
+            return
+        stamp = time.strftime("%H:%M:%S")
+        parts = []
+        if report.new_files:
+            parts.append(f"{report.new_files} new file(s)")
+        if report.changed_files:
+            parts.append(f"{report.changed_files} refreshed")
+        if report.drawers_added:
+            parts.append(f"{report.drawers_added} drawers")
+        if report.transcript_drawers:
+            parts.append(f"{report.transcript_drawers} transcript drawers")
+        ui.ok(" · ".join(parts) or "scan complete", stamp)
+        for err in report.errors[:3]:
+            ui.warn("skipped", err)
+
+    try:
+        if once:
+            report = watcher.scan_once()
+            _render(report)
+            if not report.activity:
+                ui.ok("palace already current")
+        else:
+            ui.hint("Ctrl+C to stop")
+            ui.blank()
+            watcher.run(interval=interval, on_report=_render)
+    except KeyboardInterrupt:
+        ui.blank()
+        ui.ok("watch stopped")
+    finally:
+        mem.close()
+
+
+@watch_app.command("add")
+def watch_add(path: Path = typer.Argument(..., help="file or directory to watch")) -> None:
+    """Add a path to the watchlist."""
+    from superton.watcher import add_watch
+
+    target = path.expanduser()
+    if not target.exists():
+        ui.err(f"not found: {path}")
+        raise typer.Exit(1)
+    if add_watch(_cfg(), target):
+        ui.ok(f"watching {target}")
+        ui.hint("start the watcher with [bold]superton watch[/bold]")
+    else:
+        ui.warn("already on the watchlist", str(target))
+
+
+@watch_app.command("remove")
+def watch_remove(path: Path = typer.Argument(..., help="path to stop watching")) -> None:
+    """Remove a path from the watchlist (drawers are kept)."""
+    from superton.watcher import remove_watch
+
+    if remove_watch(_cfg(), path.expanduser()):
+        ui.ok(f"stopped watching {path.expanduser()}", "existing drawers kept")
+    else:
+        ui.warn("not on the watchlist", str(path.expanduser()))
+
+
+@watch_app.command("list")
+def watch_list() -> None:
+    """Show the watchlist and the transcript dirs that will be scanned."""
+    from superton.watcher import default_transcript_roots, load_watchlist
+
+    cfg = _cfg()
+    roots = load_watchlist(cfg)
+    tx_roots = default_transcript_roots()
+    ui.section("watchlist", f"{len(roots)} path(s)")
+    table = ui.make_table("kind", "path")
+    # Fold long paths instead of Rich's default ellipsis truncation so the
+    # full path is always visible (and greppable in narrow terminals).
+    for root in roots:
+        table.add_row("folder", Text(str(root), overflow="fold"))
+    for name, root in tx_roots:
+        table.add_row(f"transcripts · {name}", Text(str(root), overflow="fold"))
+    if not roots and not tx_roots:
+        table.add_row("-", "nothing watched yet")
+    ui.print_table(table)
+    ui.blank()
+    ui.hint("add more with [bold]superton watch add <path>[/bold]")
+
+
 @app.command(rich_help_panel=PANEL_EXPLORE)
 def ask(
     question: str = typer.Argument(..., help="your question"),
