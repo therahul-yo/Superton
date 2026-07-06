@@ -282,6 +282,33 @@ Features:
 - Optional Playwright Chromium for JS-rendered SPAs
 - Pages stream directly into your palace as searchable drawers
 
+## Watch Mode
+
+`superton watch` keeps the palace current without manual `add`s — the
+first step toward SuperTon as the always-on memory layer for every AI
+tool on your machine.
+
+```bash
+superton watch add ~/notes       # manage the watchlist
+superton watch                   # poll every 30s (Ctrl+C to stop)
+superton watch --once            # single pass — cron-friendly
+superton watch list              # see what's being watched
+```
+
+It watches two kinds of sources:
+
+- **Your watchlist** — folders and files you registered with
+  `superton watch add`.
+- **AI transcript dirs** — `~/.claude/projects`, `~/.cursor`, and
+  `~/.amp` are scanned automatically (disable with `--no-transcripts`),
+  so every Claude Code / Cursor / Amp session lands in the palace as it
+  happens.
+
+Semantics are deliberate: new files are ingested, changed files are
+refreshed (stale chunks dropped first), and deleted files **keep** their
+drawers — the palace is memory, not a mirror. Content-addressed drawer
+ids make re-scans of unchanged content free.
+
 ## Commands
 
 | Command | Purpose |
@@ -297,6 +324,7 @@ Features:
 | `superton forget <id>` | Remove a drawer |
 | `superton forget-source <path-or-name>` | Remove all drawers from one source |
 | `superton refresh <path>` | Reingest a source and remove stale chunks |
+| `superton watch [add\|remove\|list]` | Auto-ingest watched folders + AI transcripts |
 | `superton sources` | List indexed source files |
 | `superton stats` | Palace statistics (`--json` for scripts) |
 | `superton doctor` | Check local runtime, memory, theme, and model setup |

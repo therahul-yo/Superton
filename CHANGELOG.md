@@ -45,6 +45,13 @@ changes — they are called out in the **Breaking** section.
 
 ### Added
 
+- **`superton watch` — auto-ingest watcher** (REVAMP_PLAN Phase 1).
+  Polls a user-managed watchlist (`watch add|remove|list`) plus the AI
+  transcript dirs the importers already understand (`~/.claude/projects`,
+  `~/.cursor`, `~/.amp`). New files are ingested, changed files are
+  refreshed (stale chunks dropped first), deleted files keep their
+  drawers. `--once` runs a single cron-friendly pass; state persists in
+  `watch_state.json` so restarts stay quiet.
 - **`superton open` and `superton recall`** (REVAMP_PLAN Phase 3 core).
   `open <id>` resolves the short ids shown in citation footers to the
   full drawer (source, wing/room, age, complete text) and `--edit`
